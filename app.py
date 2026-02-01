@@ -3,95 +3,112 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 
-st.set_page_config(page_title="Forex Analiz Pro", layout="wide")
+# Səhifə Ayarları
+st.set_page_config(page_title="Forex Analiz Mərkəzi", layout="wide")
 
-def get_signal(title, desc=""):
-    """Başlıq və xülasəyə əsasən siqnal təyin edir"""
-    text = (title + " " + desc).lower()
-    buy_words = ['bullish', 'artış', 'yükseliş', 'long', 'destek', 'alım', 'al']
-    sell_words = ['bearish', 'düşüş', 'short', 'direnç', 'satış', 'sat']
+def get_action_logic(text):
+    """Mətni analiz edib Long/Short qərarı verir"""
+    text = text.lower()
+    long_keywords = ['bullish', 'long', 'yükseliş', 'artış', 'destek', 'alım', 'buy', 'target higher']
+    short_keywords = ['bearish', 'short', 'düşüş', 'gerileme', 'direnç', 'satış', 'sell', 'target lower']
     
-    if any(word in text for word in buy_words):
-        return "🟢 LONG (Alış Meyilli)"
-    elif any(word in text for word in sell_words):
-        return "🔴 SHORT (Satış Meyilli)"
-    return "🟡 NEYTRAL / Gözlə"
+    # Xülasə üçün sadə tərcümə məntiqi
+    summary = "Analiz bazarda qeyri-müəyyənlik və ya neytral zona göstərir."
+    action = "🟡 Neytral / Gözlə"
+    
+    if any(word in text for word in long_keywords):
+        action = "🟢 LONG (Alış)"
+        summary = "Texniki göstəricilər artım meylini və alış fürsətlərini dəstəkləyir."
+    elif any(word in text for word in short_keywords):
+        action = "🔴 SHORT (Satış)"
+        summary = "Texniki göstəricilər eniş meylini və satış təzyiqini göstərir."
+        
+    return action, summary
 
-def get_dailyforex():
-    url = "https://www.dailyforex.com/forex-technical-analysis/page-1"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+def fetch_dailyforex_rss():
+    """RSS vasitəsilə DailyForex-dən məlumat çəkir (Bloklanmır)"""
+    url = "https://www.dailyforex.com/forex-technical-analysis/rss"
     try:
-        # DailyForex bəzən cookies tələb edir, session istifadə edək
-        session = requests.Session()
-        response = session.get(url, headers=headers, timeout=15)
-        soup = BeautifulSoup(response.content, 'html.parser')
-        analizler = []
+        response = requests.get(url, timeout=10)
+        soup = BeautifulSoup(response.content, features="xml")
+        items = soup.find_all('item')
         
-        # Selector-u daha ümumi tutaq
-        items = soup.select('div.daily-analysis-item') or soup.select('article')
-        
+        results = []
         for item in items[:10]:
-            title_el = item.find('h2') or item.find('h3')
-            link_el = item.find('a')
-            if title_el and link_el:
-                title = title_el.text.strip()
-                link = "https://www.dailyforex.com" + link_el['href'] if not link_el['href'].startswith('http') else link_el['href']
-                analizler.append({
-                    "Mənbə": "DailyForex",
-                    "Analiz": title,
-                    "Siqnal": get_signal(title),
-                    "Link": link
-                })
-        return analizler
+            title = item.title.text
+            link = item.link.text
+            desc = item.description.text if item.description else ""
+            action, summary = get_action_logic(title + " " + desc)
+            
+            results.append({
+                "Mənbə": "DailyForex",
+                "Analiz": title,
+                "Qərar": action,
+                "Məna (AZ)": summary,
+                "Link": link
+            })
+        return results
     except:
         return []
 
-def get_fxstreet():
+def fetch_fxstreet_tr():
+    """FXStreet TR saytından məlumat çəkir"""
     url = "https://www.fxstreet.com.tr/analysis/latest"
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
-        response = requests.get(url, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.content, 'html.parser')
-        analizler = []
+        results = []
+        
+        # FXStreet başlıqlarını tapmaq
         items = soup.select('h4.fxs_headline_tiny') or soup.find_all('h4')
         
         for item in items[:10]:
-            link_el = item.find('a')
-            if link_el:
-                title = link_el.text.strip()
-                analizler.append({
+            link_tag = item.find('a')
+            if link_tag:
+                title = link_tag.text.strip()
+                link = link_tag['href']
+                action, summary = get_action_logic(title)
+                
+                results.append({
                     "Mənbə": "FXStreet TR",
                     "Analiz": title,
-                    "Siqnal": get_signal(title),
-                    "Link": link_el['href']
+                    "Qərar": action,
+                    "Məna (AZ)": summary,
+                    "Link": link
                 })
-        return analizler
+        return results
     except:
         return []
 
-st.title("📊 Forex Analiz və Siqnallar")
+# --- UI GÖSTƏRİCİSİ ---
+st.title("📈 Forex Son 10 Analiz və Qərarlar")
+st.markdown("Hər iki saytdan ən son texniki analizlər toplanaraq avtomatik qiymətləndirilir.")
 
-if st.sidebar.button('Məlumatları Yenilə'):
-    with st.spinner('Məlumatlar hər iki saytdan çəkilir...'):
-        data = get_dailyforex() + get_fxstreet()
+if st.button('Yenilə və Analiz Et'):
+    with st.spinner('Məlumatlar emal olunur...'):
+        all_data = fetch_dailyforex_rss() + fetch_fxstreet_tr()
         
-        if data:
-            df = pd.DataFrame(data)
-            # Cədvəl görünüşü
-            st.dataframe(df[['Mənbə', 'Analiz', 'Siqnal']], use_container_width=True)
+        if all_data:
+            df = pd.DataFrame(all_data)
             
-            # Detallı xülasə hissəsi
-            st.subheader("📝 Analiz Detalları")
-            for item in data:
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.markdown(f"**{item['Mənbə']}**: {item['Analiz']}")
-                with col2:
-                    st.info(item['Siqnal'])
-                st.write(f"[Məqaləyə keçid]({item['Link']})")
-                st.divider()
+            # Əsas cədvəl
+            st.subheader("📋 İcmal Cədvəli")
+            st.dataframe(df[['Mənbə', 'Analiz', 'Qərar']], use_container_width=True)
+            
+            # Detallı kartlar
+            st.subheader("🔍 Analizlərin Xülasəsi")
+            for entry in all_data:
+                with st.expander(f"{entry['Qərar']} | {entry['Mənbə']}: {entry['Analiz']}"):
+                    st.write(f"**Vəziyyət:** {entry['Məna (AZ)']}")
+                    st.write(f"**Konkret Addım:** Bu analiz {entry['Qərar'].split(' ')[1]} istiqamətli hərəkət ehtimalını vurğulayır.")
+                    st.write(f"[Tam analizi oxu]({entry['Link']})")
         else:
-            st.error("Xəta: Saytlara qoşulmaq mümkün olmadı. Zəhmət olmasa bir az sonra yenidən yoxlayın.")
-else:
-    st.info("Sol paneldəki 'Yenilə' düyməsinə basaraq ən son 20 analizi (10+10) görə bilərsiniz.")
-    
+            st.error("Məlumat tapılmadı. İnternet bağlantısını yoxlayın.")
+
+st.sidebar.markdown("""
+### Məlumat:
+- **DailyForex:** RSS kanalı ilə çəkilir (Bloklanma riski yoxdur).
+- **FXStreet:** Birbaşa veb-saytdan çəkilir.
+- **Qərar Məntiqi:** Başlıqdakı açar sözlərə əsasən **Long/Short** təyin edilir.
+""")
