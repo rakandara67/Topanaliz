@@ -1,6 +1,5 @@
 streamlit
 pandas
-feedparser
 google-generativeai
+duckduckgo_search
 beautifulsoup4
-requests
