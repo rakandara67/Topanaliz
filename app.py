@@ -1,6 +1,8 @@
 import streamlit as st
 import requests
 import google.generativeai as genai
+import feedparser
+from bs4 import BeautifulSoup
 
 # --- KONFİQURASİYA ---
 GEMINI_API_KEY = "AIzaSyCYMzC7vax4vCA0FLDxeqIeHBwxHklUnao"
@@ -12,18 +14,18 @@ try:
 except Exception as e:
     st.error(f"AI Xətası: {e}")
 
-st.set_page_config(page_title="Forex Deep Mind", page_icon="🔬", layout="wide")
+st.set_page_config(page_title="Forex Deep Mind Pro", page_icon="🏦", layout="wide")
 
 def deep_ai_analysis(full_text):
-    """Məqalənin tam mətnini oxuyub siqnal çıxaran beyin"""
+    """Mətnin daxilinə girib texniki süzgəcdən keçirir"""
     prompt = f"""
-    Sən peşəkar Forex analitikisən. Aşağıdakı bazar xəbərini dərindən oxu:
+    Sən peşəkar Forex analitikisən. Aşağıdakı bazar təhlilini dərindən oxu:
     "{full_text[:4000]}"
     
     Tapşırıq:
-    1. Sentiment: 🟢 LONG, 🔴 SHORT və ya 🟡 NEYTRAL?
-    2. Səbəb: Azərbaycan dilində 1 cümləlik texniki izah.
-    3. Qiymətlər: Entry, SL, TP rəqəmlərini mətndən tap.
+    1. Qərar: 🟢 LONG, 🔴 SHORT və ya 🟡 NEYTRAL?
+    2. Səbəb: Azərbaycan dilində 1 cümləlik dəqiq texniki izah.
+    3. Səviyyələr: Entry, SL, TP rəqəmlərini tap.
     
     Format: [QƏRAR] | [İZAH] | [SƏVİYYƏLƏR]
     """
@@ -34,55 +36,50 @@ def deep_ai_analysis(full_text):
         return None
 
 # --- UI ---
-st.title("🔬 Forex AI: Professional Deep Reader")
-st.info("Bu versiya rəsmi agentliklərin tam mətnlərini analiz edir.")
+st.title("🏦 Forex Deep Mind: Professional Hub")
+st.markdown("Bu sistem rəsmi API və ehtiyat xəbər kanallarından **tam mətnləri** toplayıb analiz edir.")
 
-# Axtarış sorğularını sadələşdirək ki, API boş nəticə verməsin
-query_options = {
-    "EUR/USD": "EURUSD technical analysis",
-    "GOLD (XAU)": "Gold price forecast",
-    "GBP/USD": "GBPUSD signal",
-    "BITCOIN": "Bitcoin market update"
-}
+selected_pair = st.selectbox("Analiz obyekti:", ["EURUSD", "GBPUSD", "XAUUSD (Gold)", "BTCUSD"])
 
-selected_pair = st.selectbox("Analiz obyekti:", list(query_options.keys()))
-search_query = query_options[selected_pair]
-
-if st.button('Dərindən Analiz Et'):
-    # NewsData.io URL - Axtarışı daha effektiv etmək üçün 'q' parametrini optimallaşdırdıq
-    url = f"https://newsdata.io/api/1/news?apikey={NEWS_API_KEY}&q={search_query}&language=en"
+if st.button('Hər Bir Analizi Dərindən Oxu'):
+    reports = []
     
-    with st.spinner('Tam mətnli məqalələr toplanır...'):
+    with st.status("Məlumatlar müxtəlif mənbələrdən toplanır...", expanded=True) as status:
+        # 1-Cİ MƏNBƏ: NewsData API
+        st.write("🔍 NewsData API yoxlanılır...")
+        url = f"https://newsdata.io/api/1/news?apikey={NEWS_API_KEY}&q={selected_pair}&language=en"
         try:
-            r = requests.get(url)
+            r = requests.get(url, timeout=10)
             data = r.json()
-            articles = data.get('results', [])
-            
-            if articles:
-                found_count = 0
-                for art in articles[:5]:
-                    # Məqalənin içini 'content' bölməsindən götürürük
-                    content = art.get('content') or art.get('description', '')
-                    title = art.get('title', 'Başlıqsız Məqalə')
-                    
-                    if len(content) > 150: # Yalnız dolğun mətnləri analiz et
-                        analysis = deep_ai_analysis(content)
-                        if analysis and len(analysis) >= 2:
-                            found_count += 1
-                            decision = analysis[0].strip()
-                            
-                            with st.expander(f"{decision} | {title[:80]}..."):
-                                st.write(f"**🧠 AI Təhlili:** {analysis[1].strip()}")
-                                st.warning(f"**🎯 Səviyyələr:** {analysis[2].strip() if len(analysis)>2 else '-'}")
-                                st.caption(f"Mənbə: {art.get('source_id')} | [Məqaləyə keçid]({art.get('link')})")
-                
-                if found_count == 0:
-                    st.warning("Xəbərlər tapıldı, lakin içində dərin analiz üçün yetərli mətn yoxdur.")
-                else:
-                    st.balloons()
-            else:
-                st.error("NewsData API-dan məlumat gəlmədi. API açarını və ya limitinizi yoxlayın.")
-                
-        except Exception as e:
-            st.error(f"Sistem xətası: {e}")
+            for art in data.get('results', [])[:3]:
+                content = art.get('content') or art.get('description', '')
+                if len(content) > 100:
+                    reports.append({"title": art['title'], "text": content, "source": "NewsData"})
+        except:
+            st.write("⚠️ NewsData limitdədir və ya xəta verdi.")
+
+        # 2-Cİ MƏNBƏ (Fallback): RSS Feeds (Bloklanmayan rəsmi lentlər)
+        if len(reports) < 2:
+            st.write("🔄 Ehtiyat xəbər kanallarına keçid edilir...")
+            rss_url = "https://www.dailyforex.com/forex-technical-analysis/rss"
+            feed = feedparser.parse(rss_url)
+            for entry in feed.entries[:5]:
+                if selected_pair.lower() in entry.title.lower():
+                    clean_text = BeautifulSoup(entry.summary, "html.parser").get_text()
+                    reports.append({"title": entry.title, "text": clean_text, "source": "DailyForex RSS"})
+
+        # ANALİZ MƏRHƏLƏSİ
+        if reports:
+            st.write(f"✅ {len(reports)} analiz mətni tapıldı. AI oxumağa başlayır...")
+            for rep in reports:
+                analysis = deep_ai_analysis(rep['text'])
+                if analysis and len(analysis) >= 2:
+                    decision = analysis[0].strip()
+                    with st.expander(f"{decision} | {rep['title']}"):
+                        st.write(f"**🧠 AI Təhlili:** {analysis[1].strip()}")
+                        st.warning(f"**🎯 Texniki Səviyyələr:** {analysis[2].strip() if len(analysis)>2 else '-'}")
+                        st.caption(f"Mənbə: {rep['source']}")
+            status.update(label="Analiz tamamlandı!", state="complete")
+        else:
+            st.error("Heç bir mənbədən məlumat alınmadı. Lütfən API açarını və ya interneti yoxlayın.")
     
