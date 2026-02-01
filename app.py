@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import feedparser
 import google.generativeai as genai
+# VACİB: Aşağıdakı iki sətir xətaları həll edir
+import requests
+from bs4 import BeautifulSoup 
 from urllib.parse import quote
 import time
 import random
@@ -15,79 +18,77 @@ try:
 except Exception as e:
     st.error(f"AI Xətası: {e}")
 
-st.set_page_config(page_title="Forex Deep AI (No Block)", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="Forex Deep AI (Safe)", page_icon="🛡️", layout="wide")
 
-def get_deep_analysis_from_snippet(title, summary):
-    """Sayta girmədən, mövcud geniş xülasəni analiz edir"""
+def get_deep_analysis(title, summary_text):
+    """Google-un verdiyi xülasə əsasında analiz edir"""
     prompt = f"""
-    Sən peşəkar Forex analitikisən. Aşağıdakı məlumatlar müxtəlif saytların analizləridir:
+    Forex analitikisən. Bu məlumatı oxu:
     BAŞLIQ: {title}
-    XÜLASƏ: {summary}
+    MƏTN: {summary_text}
     
     Tapşırıq:
-    1. Bu məlumatlara əsasən istiqaməti təyin et: LONG, SHORT və ya NEYTRAL?
-    2. Azərbaycan dilində çox qısa (maks 10 söz) izah yaz.
-    3. Əgər mətndə konkret qiymət yoxdursa, başlığa və xülasəyə əsasən cari trend səviyyəsini təxmin et.
+    1. Qərar: LONG, SHORT və ya NEYTRAL?
+    2. Səbəb: Azərbaycan dilində 1 cümlə.
+    3. Səviyyələr: Varsa Entry, SL, TP qiymətləri.
     
     Format: [QƏRAR] | [İZAH] | [SƏVİYYƏ]
     """
     try:
         response = ai_model.generate_content(prompt)
-        res = response.text
-        parts = res.split("|")
+        parts = response.text.split("|")
         
         decision = "🟡 NEYTRAL"
         if "LONG" in parts[0].upper(): decision = "🟢 LONG"
         elif "SHORT" in parts[0].upper(): decision = "🔴 SHORT"
         
-        reason = parts[1].strip() if len(parts) > 1 else "Trend analizi."
-        levels = parts[2].strip() if len(parts) > 2 else "Müəyyən edilmədi."
+        reason = parts[1].strip() if len(parts) > 1 else "Trend təhlili."
+        levels = parts[2].strip() if len(parts) > 2 else "Məlumat yoxdur."
         
         return decision, reason, levels
     except:
         return None, None, None
 
-# --- UI ---
+# --- İNTERFEYS ---
 st.title("🛡️ Bloklanmayan Dərin AI Analiz")
-st.markdown("Bu versiya saytlara birbaşa daxil olmur (bloklanmamaq üçün), Google-un məlumat bazasından istifadə edərək analiz edir.")
+st.info("Bu versiya Google-un təhlükəsiz bazasından istifadə edir və saytlar tərəfindən bloklanmır.")
 
-if st.button('Analizləri Bir-Bir Gətir (Güvənli Metod)'):
-    # Google News RSS-i bir az daha geniş xülasə verən formata salırıq
+if st.button('Analizləri Bir-Bir Gətir'):
     sources = [
         ("DailyForex", "dailyforex.com", "forex signals technical"),
-        ("FXStreet", "fxstreet.com", "price action forecast"),
-        ("TradingView", "tradingview.com", "gold eurusd analysis")
+        ("FXStreet", "fxstreet.com", "price forecast analysis"),
+        ("TradingView", "tradingview.com", "gold eurusd news")
     ]
     
     container = st.container()
     total_count = 0
     
     for src_name, site_url, query in sources:
-        # 'ceid=US:en' yerinə 'hl=en-US' istifadə edirik ki, daha çox ingilisdilli məzmun gəlsin
-        url = f"https://news.google.com/rss/search?q={quote('site:'+site_url+' '+query)}&hl=en-US&gl=US"
-        feed = feedparser.parse(url)
+        # RSS vasitəsilə Google News-dan məlumat alırıq
+        rss_url = f"https://news.google.com/rss/search?q={quote('site:'+site_url+' '+query)}&hl=en-US&gl=US&ceid=US:en"
+        feed = feedparser.parse(rss_url)
         
         for entry in feed.entries[:10]:
-            # Hər birini tək-tək və fərqli vaxtda göstəririk
-            time.sleep(random.uniform(0.2, 0.8))
+            # Hər analiz arası kiçik fasilə
+            time.sleep(random.uniform(0.1, 0.4))
             
-            # Google RSS-in 'summary' hissəsində çox vaxt maraqlı detallar olur
-            # Onu təmizləyirik
-            clean_summary = BeautifulSoup(entry.summary, "html.parser").text if 'summary' in entry else ""
+            # BeautifulSoup xətasını burada həll etdik:
+            raw_html = entry.summary if 'summary' in entry else ""
+            clean_text = BeautifulSoup(raw_html, "html.parser").get_text()
             
-            decision, reason, levels = get_deep_analysis_from_snippet(entry.title, clean_summary)
+            decision, reason, levels = get_deep_analysis(entry.title, clean_text)
             
             if decision:
                 total_count += 1
                 with container:
                     with st.expander(f"{decision} | {entry.title.split(' - ')[0]}", expanded=True):
                         st.markdown(f"**Mənbə:** `{src_name}`")
-                        st.info(f"**AI Təhlili:** {reason}")
+                        st.success(f"**AI Təhlili:** {reason}")
                         st.warning(f"**Təxmini Səviyyələr:** {levels}")
-                        st.link_button("Mənbəyə keçid", entry.link)
+                        st.link_button("Mənbəyə bax", entry.link)
 
     if total_count == 0:
-        st.error("Məlumat tapılmadı. Zəhmət olmasa API açarını və ya axtarış sözlərini yoxlayın.")
+        st.error("Məlumat tapılmadı. İnternet bağlantısını və ya API açarını yoxlayın.")
     else:
         st.balloons()
         
