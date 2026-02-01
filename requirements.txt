@@ -1,4 +1,5 @@
 streamlit
-pandas
 google-generativeai
-yfinance
+googlesearch-python
+beautifulsoup4
+requests
