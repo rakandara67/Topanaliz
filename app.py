@@ -5,68 +5,50 @@ import requests
 from bs4 import BeautifulSoup
 
 # --- KONFİQURASİYA ---
+# API açarınızı bura tək dırnaq içində yazın
 API_KEY = "AIzaSyCYMzC7vax4vCA0FLDxeqIeHBwxHklUnao"
 
 try:
     genai.configure(api_key=API_KEY)
+    # Heç bir beta versiya və ya tool istifadə etmədən birbaşa model
     model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
     st.error(f"AI bağlantı xətası: {e}")
 
-st.set_page_config(page_title="Forex AI Final", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Forex Deep Reader", page_icon="📈")
 
-st.title("📈 Forex AI: Həqiqi Mətn Analizi")
-st.markdown("Bu sistem Google-da ən son analizləri tapır, məqalələrin daxilinə girir və tam mətni AI-ya oxudur.")
+st.title("📈 Forex AI: Deep Reader")
 
-query = st.text_input("Axtarış sözü:", "EURUSD technical analysis investing.com")
+pair = st.text_input("Axtarış sözü (Məs: EURUSD technical analysis):", "EURUSD forecast news")
 
-if st.button('Dərindən Analiz Et'):
-    with st.spinner('Məqalələr oxunur...'):
+if st.button('Analiz Et'):
+    with st.spinner('İnternetdə analizlər axtarılır və oxunur...'):
         try:
-            # 1. Google-da son analizləri tapırıq
-            links = []
-            for j in search(query, num_results=3):
-                links.append(j)
+            # Google-da axtarış edirik
+            # googlesearch-python kitabxanası burada işə düşür
+            search_results = list(search(pair, num_results=3))
             
-            if not links:
-                st.warning("Məqalə tapılmadı.")
+            if not search_results:
+                st.warning("Google-da heç bir məqalə tapılmadı.")
             else:
-                for link in links:
-                    st.write(f"📖 Oxunur: {link}")
-                    
-                    # 2. Saytın daxilinə girib mətni çəkirik
+                for link in search_results:
+                    st.write(f"🔍 Oxunur: {link}")
                     try:
-                        header = {'User-Agent': 'Mozilla/5.0'}
-                        page = requests.get(link, headers=header, timeout=10)
-                        soup = BeautifulSoup(page.content, 'html.parser')
-                        
-                        # Saytdakı lazımsız reklamları atıb əsas mətni götürürük
-                        paragraphs = soup.find_all('p')
-                        article_text = " ".join([p.get_text() for p in paragraphs[:15]]) # İlk 15 paraqraf bəs edir
-                        
-                        if len(article_text) > 500:
-                            # 3. AI-ya tam mətni göndərib analiz etdiririk
-                            prompt = f"""
-                            Aşağıdakı Forex analiz məqaləsini dərindən oxu:
-                            "{article_text}"
-                            
-                            Səndən tələblər:
-                            1. Qərar: 🟢 LONG, 🔴 SHORT və ya 🟡 NEYTRAL?
-                            2. Səbəb: Azərbaycan dilində 1 cümləlik texniki izah.
-                            3. Səviyyələr: Entry, SL, TP rəqəmlərini tap.
-                            """
+                        # Saytın daxili mətnini çəkirik
+                        res = requests.get(link, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+                        soup = BeautifulSoup(res.content, 'html.parser')
+                        text = " ".join([p.get_text() for p in soup.find_all('p')[:10]])
+
+                        if len(text) > 200:
+                            # AI-ya mətni göndəririk
+                            prompt = f"Aşağıdakı mətni oxu və Forex analizi çıxar (Qərar, Səbəb, Səviyyələr): {text}"
                             response = model.generate_content(prompt)
                             
-                            with st.chat_message("assistant"):
-                                st.markdown(response.text)
-                                st.caption(f"Mənbə: {link}")
+                            with st.expander(f"Analiz nəticəsi: {link[:40]}..."):
+                                st.write(response.text)
                         else:
-                            st.write("⚠️ Bu saytın mətni çox qısadır, növbətiyə keçilir.")
+                            st.info("Mətn çox qısadır, növbəti mənbəyə keçilir.")
                     except:
-                        st.write("❌ Bu sayta giriş mümkün olmadı.")
-                
-                st.success("Bütün mümkün analizlər tamamlandı!")
-                st.balloons()
+                        st.error(f"Bu sayt oxuna bilmədi: {link}")
         except Exception as e:
             st.error(f"Sistem xətası: {e}")
-
