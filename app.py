@@ -3,96 +3,114 @@ import pandas as pd
 import feedparser
 import google.generativeai as genai
 from urllib.parse import quote
+import time
 
 # --- KONFİQURASİYA ---
-GEMINI_API_KEY = "SİZİN_API_AÇARINIZ" # Buraya öz açarınızı yazın
-genai.configure(api_key=AIzaSyCYMzC7vax4vCA0FLDxeqIeHBwxHklUnao)
-model = genai.GenerativeModel('gemini-1.5-flash')
+# API açarını buraya daxil edin
+API_KEY = "AIzaSyCYMzC7vax4vCA0FLDxeqIeHBwxHklUnao" 
 
-st.set_page_config(page_title="AI Forex Analiz", page_icon="🤖", layout="wide")
+# AI Modelini Başlatmaq (Xəta profilaktikası ilə)
+try:
+    genai.configure(api_key=API_KEY)
+    ai_model = genai.GenerativeModel('gemini-1.5-flash')
+except Exception as e:
+    st.error(f"AI Başlatma Xətası: {e}")
+
+st.set_page_config(page_title="Forex AI Analitik", page_icon="🤖", layout="wide")
 
 def get_ai_decision(title):
-    """Gemini AI mətni oxuyub qərar verir"""
+    """Gemini AI analizi dərindən oxuyub qərar verir"""
     prompt = f"""
-    Sən peşəkar bir Forex analitikisən. Aşağıdakı analiz başlığını oxu:
-    "{title}"
-    
-    Bu analizə əsasən qərar ver: LONG, SHORT və ya NEYTRAL? 
-    Həmçinin çox qısa (maksimum 1 cümlə) Azərbaycan dilində xülasə yaz.
-    Cavabı yalnız bu formatda qaytar:
-    Qərar: [LONG/SHORT/NEYTRAL]
-    Xülasə: [Sənin xülasən]
+    Sən peşəkar Forex treyderisən. Bu analizi oxu: "{title}"
+    1. Qərar ver: LONG, SHORT və ya NEYTRAL?
+    2. Səbəbini Azərbaycan dilində çox qısa (1 cümlə) izah et.
+    Cavabı bu formatda yaz: QƏRAR: [LONG/SHORT/NEYTRAL] | İZAH: [Sənin izahın]
     """
     try:
-        response = model.generate_content(prompt)
-        res_text = response.text
-        # Cavabı parçalayırıq
-        decision = "NEYTRAL"
-        summary = "Analiz emal edilə bilmədi."
+        response = ai_model.generate_content(prompt)
+        text = response.text
         
-        if "LONG" in res_text.upper(): decision = "🟢 LONG"
-        elif "SHORT" in res_text.upper(): decision = "🔴 SHORT"
+        decision = "🟡 NEYTRAL"
+        if "LONG" in text.upper(): decision = "🟢 LONG"
+        elif "SHORT" in text.upper(): decision = "🔴 SHORT"
         
-        if "Xülasə:" in res_text:
-            summary = res_text.split("Xülasə:")[1].strip()
-            
+        summary = text.split("|")[-1].replace("İZAH:", "").strip() if "|" in text else "İstiqamət təyin oluna bilmədi."
         return decision, summary
-    except Exception:
-        return "🟡 NEYTRAL", "AI xidməti hazırda əlçatmazdır."
+    except:
+        return "🟡 NEYTRAL", "AI hazırda cavab verə bilmir."
 
-def fetch_news(site_name, site_url, query="forex analysis"):
+def fetch_data(source_name, site_url, query="forex analysis"):
+    """Google News vasitəsilə təmizlənmiş məlumat çəkir"""
     encoded_query = quote(f"site:{site_url} {query}")
-    rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
-    feed = feedparser.parse(rss_url)
+    url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
+    feed = feedparser.parse(url)
+    
     results = []
+    # TradingView-dakı mənasız başlıqları (Page 1, Editors' Picks və s.) filtr edirik
+    junk_words = ["page", "editors' picks", "ideas for", "key facts"]
     
     for entry in feed.entries[:8]:
-        # AI Analizi burada işə düşür
-        decision, summary = get_ai_decision(entry.title)
-        
+        title = entry.title
+        if source_name == "TradingView" and any(word in title.lower() for word in junk_words):
+            continue
+            
+        decision, summary = get_ai_decision(title)
         results.append({
-            "Mənbə": site_name,
-            "Analiz": entry.title.split(" - ")[0],
+            "Mənbə": source_name,
+            "Analiz": title.split(" - ")[0],
             "AI Qərarı": decision,
-            "Xülasə (AZ)": summary,
+            "AI İzahı": summary,
             "Link": entry.link
         })
+        time.sleep(0.1) # API limitini qorumaq üçün kiçik fasilə
     return results
 
 # --- INTERFACE ---
-st.title("🤖 AI Destekli Forex Analiz Merkezi")
-st.write("Google Gemini AI hər bir analizi dərindən oxuyaraq qərar verir.")
+st.title("🤖 Forex AI Analiz Mərkəzi")
+st.markdown("TradingView, FXStreet və DailyForex məlumatları **Gemini 1.5 Pro** tərəfindən analiz edilir.")
 
-if st.button('Məlumatları Yenilə və AI ilə Analiz Et'):
-    with st.status("AI analizləri oxuyur...", expanded=True) as status:
-        st.write("DailyForex toplanır...")
-        df_daily = fetch_news("DailyForex", "dailyforex.com")
-        st.write("FXStreet toplanır...")
-        df_fx = fetch_news("FXStreet", "fxstreet.com")
-        st.write("TradingView toplanır...")
-        df_tv = fetch_news("TradingView", "tradingview.com", query="technical analysis gold eurusd")
+if st.button('Yenilə və AI ilə Təhlil Et'):
+    with st.status("AI məlumatları emal edir...", expanded=True) as status:
+        st.write("DailyForex oxunur...")
+        data_df = fetch_data("DailyForex", "dailyforex.com")
         
-        all_data = df_daily + df_fx + df_tv
+        st.write("FXStreet oxunur...")
+        data_fx = fetch_data("FXStreet", "fxstreet.com")
+        
+        st.write("TradingView oxunur...")
+        # TradingView üçün daha dəqiq valyuta axtarışı
+        data_tv = fetch_data("TradingView", "tradingview.com", query="EURUSD GOLD technical analysis")
+        
+        all_results = data_df + data_fx + data_tv
         status.update(label="Analiz tamamlandı!", state="complete", expanded=False)
 
-    if all_data:
-        df = pd.DataFrame(all_data)
+    if all_results:
+        df = pd.DataFrame(all_results)
         
-        st.subheader("📋 AI İcmal Cədvəli")
+        # Əsas Cədvəl
+        st.subheader("📋 AI Qərar Cədvəli")
         st.dataframe(df[['Mənbə', 'Analiz', 'AI Qərarı']], use_container_width=True)
         
-        st.subheader("📝 AI Detallı Hesabat")
+        # Detallar
+        st.subheader("📝 AI-ın Detallı Şərhləri")
         tabs = st.tabs(["DailyForex", "FXStreet", "TradingView"])
         
-        for i, source in enumerate(["DailyForex", "FXStreet", "TradingView"]):
+        for i, src in enumerate(["DailyForex", "FXStreet", "TradingView"]):
             with tabs[i]:
-                items = [x for x in all_data if x['Mənbə'] == source]
+                items = [x for x in all_results if x['Mənbə'] == src]
+                if not items:
+                    st.write("Bu mənbədən uyğun texniki analiz tapılmadı.")
                 for item in items:
                     with st.expander(f"{item['AI Qərarı']} | {item['Analiz']}"):
-                        st.write(f"**AI Təhlili:** {item['Xülasə (AZ)']}")
-                        st.link_button("Orijinal Analiz", item['Link'])
+                        st.write(f"**AI Təhlili:** {item['AI İzahı']}")
+                        st.link_button("Mənbəyə keç", item['Link'])
     else:
-        st.error("Məlumat tapılmadı.")
+        st.error("Məlumat tapılmadı. API açarını və ya interneti yoxlayın.")
 
-st.sidebar.warning("Qeyd: Gemini AI analizləri başlıqlara əsasən şərh edir. Riskli ticarətdən çəkinin.")
+st.sidebar.markdown("""
+### Sistem Haqqında:
+- **AI Model:** Gemini 1.5 Flash
+- **Məntiq:** Kontekstual Analiz
+- **Dil:** Azərbaycan dili xülasə
+""")
     
