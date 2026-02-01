@@ -2,13 +2,9 @@ import streamlit as st
 import pandas as pd
 import feedparser
 import re
+from urllib.parse import quote
 
-st.set_page_config(page_title="Forex Analiz Pro", page_icon="📈", layout="wide")
-
-def extract_levels(text):
-    """Mətndən qiymət səviyyələrini tapır"""
-    levels = re.findall(r"\d+\.\d{2,4}", text)
-    return ", ".join(list(set(levels))[:3]) if levels else "Analizdə qeyd edilməyib"
+st.set_page_config(page_title="Forex & TradingView Analiz", page_icon="📈", layout="wide")
 
 def get_sentiment(text):
     """Mətni analiz edib istiqamət və xülasə təyin edir"""
@@ -27,71 +23,76 @@ def get_sentiment(text):
         return "🟡 NEYTRAL", "Bazar hazırda qərarsızdır və ya gözləmə mövqeyindədir."
 
 def fetch_news(site_name, site_url, query="forex analysis"):
-    """RSS vasitəsilə bloklanmadan məlumat çəkir"""
-    rss_url = f"https://news.google.com/rss/search?q=site:{site_url}+{query}&hl=en-US&gl=US&ceid=US:en"
+    """Google News RSS vasitəsilə bloklanmadan məlumat çəkir"""
+    # URL daxilindəki boşluqları və simvolların təhlükəsizliyini təmin edirik
+    encoded_query = quote(f"site:{site_url} {query}")
+    rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
+    
     feed = feedparser.parse(rss_url)
     results = []
-    for entry in feed.entries[:8]: # Hər mənbədən ən son 8 analiz
+    
+    for entry in feed.entries[:8]:
         decision, summary = get_sentiment(entry.title)
-        levels = extract_levels(entry.title)
+        # Qiymət səviyyələrini təmizləyirik
+        levels = re.findall(r"\d+\.\d{2,4}", entry.title)
+        levels_str = ", ".join(list(set(levels))[:3]) if levels else "Qeyd edilməyib"
+        
         results.append({
             "Mənbə": site_name,
             "Analiz": entry.title,
             "Qərar": decision,
             "Xülasə": summary,
-            "Səviyyələr": levels,
+            "Səviyyələr": levels_str,
             "Link": entry.link
         })
     return results
 
 # --- INTERFACE ---
 st.title("📊 Forex & TradingView Analiz Mərkəzi")
-st.markdown("DailyForex, FXStreet və **TradingView Editors' Picks** analizləri bir yerdə.")
+st.markdown("DailyForex, FXStreet və **TradingView Editors' Picks** analizləri.")
 
 if st.button('Yenilə və Analiz Et'):
-    with st.spinner('Bütün mənbələrdən analizlər toplanır...'):
-        # Mənbələri birləşdiririk
-        data = (
-            fetch_news("DailyForex", "dailyforex.com") + 
-            fetch_news("FXStreet", "fxstreet.com") +
-            fetch_news("TradingView", "tradingview.com", query="editors picks trade ideas")
-        )
-        
-        if data:
-            df = pd.DataFrame(data)
+    with st.spinner('Məlumatlar toplanır...'):
+        try:
+            # Hər üç mənbədən məlumatların çəkilməsi
+            df_daily = fetch_news("DailyForex", "dailyforex.com")
+            df_fx = fetch_news("FXStreet", "fxstreet.com")
+            df_tv = fetch_news("TradingView", "tradingview.com", query="editors picks trade ideas")
             
-            # Cədvəl İcmalı
-            st.subheader("📋 Bütün Analizlərin İcmalı")
-            st.dataframe(df[['Mənbə', 'Analiz', 'Qərar']], use_container_width=True)
+            all_data = df_daily + df_fx + df_tv
             
-            # Detallı Kartlar
-            st.subheader("📝 Qərar Detalları")
-            
-            # Mənbələrə görə filtrləmək üçün tablar
-            tab1, tab2, tab3 = st.tabs(["DailyForex", "FXStreet", "TradingView"])
-            
-            with tab1:
-                for item in [x for x in data if x['Mənbə'] == "DailyForex"]:
-                    with st.expander(f"{item['Qərar']} | {item['Analiz']}"):
-                        st.write(f"**Xülasə:** {item['Xülasə']}")
-                        st.caption(f"📍 Səviyyələr: {item['Səviyyələr']}")
-                        st.link_button("Məqaləni Oxu", item['Link'])
-
-            with tab2:
-                for item in [x for x in data if x['Mənbə'] == "FXStreet"]:
-                    with st.expander(f"{item['Qərar']} | {item['Analiz']}"):
-                        st.write(f"**Xülasə:** {item['Xülasə']}")
-                        st.caption(f"📍 Səviyyələr: {item['Səviyyələr']}")
-                        st.link_button("Məqaləni Oxu", item['Link'])
-
-            with tab3:
-                for item in [x for x in data if x['Mənbə'] == "TradingView"]:
-                    with st.expander(f"{item['Qərar']} | {item['Analiz']}"):
-                        st.write(f"**Xülasə:** {item['Xülasə']}")
-                        st.caption(f"📍 Səviyyələr: {item['Səviyyələr']}")
-                        st.link_button("İdeyaya bax", item['Link'])
-        else:
-            st.warning("Məlumat tapılmadı. İnternet bağlantısını yoxlayın.")
-
-st.sidebar.success("DailyForex ✅\nFXStreet ✅\nTradingView ✅")
+            if all_data:
+                df = pd.DataFrame(all_data)
                 
+                # İcmal Cədvəli
+                st.subheader("📋 Bütün Analizlərin İcmalı")
+                st.dataframe(df[['Mənbə', 'Analiz', 'Qərar']], use_container_width=True)
+                
+                # Detallı Kartlar (Tab sistemi)
+                st.subheader("📝 Qərar Detalları")
+                tab1, tab2, tab3 = st.tabs(["DailyForex", "FXStreet", "TradingView"])
+                
+                def render_items(source_name):
+                    items = [x for x in all_data if x['Mənbə'] == source_name]
+                    if not items:
+                        st.write("Bu mənbədən yeni analiz tapılmadı.")
+                    for item in items:
+                        with st.expander(f"{item['Qərar']} | {item['Analiz']}"):
+                            st.write(f"**Vəziyyət:** {item['Xülasə']}")
+                            st.write(f"**Səviyyələr:** `{item['Səviyyələr']}`")
+                            st.link_button("Tam Analizi Oxu", item['Link'])
+
+                with tab1: render_items("DailyForex")
+                with tab2: render_items("FXStreet")
+                with tab3: render_items("TradingView")
+            else:
+                st.warning("Heç bir analiz tapılmadı.")
+        except Exception as e:
+            st.error(f"Sistem xətası: {e}")
+
+st.sidebar.markdown("""
+**Sistem Vəziyyəti:**
+- DailyForex: ✅ RSS
+- FXStreet: ✅ Google News
+- TradingView: ✅ Editors Picks
+""")
