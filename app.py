@@ -1,7 +1,6 @@
 import streamlit as st
 import yfinance as yf
 import google.generativeai as genai
-import pandas as pd
 
 # --- KONFİQURASİYA ---
 API_KEY = "AIzaSyCYMzC7vax4vCA0FLDxeqIeHBwxHklUnao"
@@ -12,82 +11,92 @@ try:
 except Exception as e:
     st.error(f"AI Xətası: {e}")
 
-st.set_page_config(page_title="Forex AI Deep Reader", page_icon="🧬", layout="wide")
+st.set_page_config(page_title="Forex Deep Intelligence", page_icon="📈", layout="wide")
 
-def process_with_ai(title, summary):
-    """Mətnin hamısını analiz edən beyin"""
-    full_text = f"Başlıq: {title}\nMəzmun: {summary}"
-    
+def deep_ai_reader(title, content):
+    """Mətnin hər bir detalını oxuyan AI beyni"""
+    if not title or len(title) < 5:
+        return None
+        
     prompt = f"""
-    Sən peşəkar Forex analitikisən. Aşağıdakı tam mətni dərindən oxu və təhlil et:
-    "{full_text}"
+    Sən peşəkar Forex analitikisən. Aşağıdakı maliyyə məlumatını dərindən təhlil et:
+    BAŞLIQ: {title}
+    MƏZMUN: {content}
     
     Tapşırıq:
-    1. Bazar sentimentini tut: 🟢 LONG, 🔴 SHORT və ya 🟡 NEYTRAL?
-    2. Azərbaycan dilində 1 cümləlik texniki səbəb yaz.
-    3. Mətndə hər hansı Entry, SL və ya TP rəqəmi varsa mütləq qeyd et.
+    1. Qərar: 🟢 LONG (Alış), 🔴 SHORT (Satış) və ya 🟡 NEYTRAL?
+    2. Səbəb: Azərbaycan dilində 1 cümləlik texniki izah.
+    3. Səviyyələr: Mətndəki Entry, Stop Loss və Take Profit rəqəmlərini tap və qeyd et.
     
     Format: [QƏRAR] | [İZAH] | [SƏVİYYƏ]
     """
     try:
         response = ai_model.generate_content(prompt)
-        return response.text.split("|")
+        parts = response.text.split("|")
+        return [p.strip() for p in parts]
     except:
-        return ["🟡 NEYTRAL", "AI emal xətası.", "-"]
+        return None
 
-# --- İNTERFEYS ---
-st.title("🧬 Forex AI: Tam Mətn Analizatoru")
-st.markdown("Bu sistem rəsmi kanallardan gələn **tam mətnləri** oxuyur. Bloklanma riski yoxdur.")
+# --- UI ---
+st.title("📈 Forex Deep Intelligence: Full Text Reader")
+st.info("Bu sistem rəsmi Yahoo Finance xəbər obyektlərinin daxili mətnlərini AI-ya oxudur.")
 
-symbol_map = {
+pairs = {
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "QIZIL (Gold)": "GC=F",
     "NEFT (Oil)": "CL=F",
-    "USD/JPY": "JPY=X"
+    "USD/JPY": "JPY=X",
+    "BITCOIN": "BTC-USD"
 }
 
-target_pair = st.selectbox("Analiz üçün aktiv seçin:", list(symbol_map.keys()))
+selected_label = st.selectbox("Analiz üçün aktiv seçin:", list(pairs.keys()))
 
-if st.button('Dərin Analizi Başlat (Heç bir başlığı ötürmə)'):
-    with st.spinner('Mənbələr dərindən oxunur...'):
-        ticker_sym = symbol_map[target_pair]
-        data = yf.Ticker(ticker_sym)
+if st.button('Dərindən Analiz Et'):
+    with st.spinner('Maliyyə məlumatları dərindən oxunur...'):
+        ticker = yf.Ticker(pairs[selected_label])
         
-        # Yahoo Finance news bəzən fərqli formatda gəlir, ona görə 'get' metodundan istifadə edirik
-        news_list = data.news
-        
-        if news_list:
-            found_count = 0
-            for item in news_list[:10]: # Son 10 rəsmi analizi oxu
-                # KeyError qarşısını almaq üçün 'get' istifadəsi
-                t = item.get('title', 'Başlıq tapılmadı')
-                # Bəzi Yahoo xəbərlərində xülasə 'summary' deyil, 'description' və ya 'content' içində olur
-                s = item.get('summary', item.get('description', 'Məqalənin daxili mətni xülasə şəklində oxunur...'))
-                
-                analysis = process_with_ai(t, s)
-                
-                if analysis and len(analysis) >= 2:
-                    found_count += 1
-                    decision = analysis[0].strip()
-                    reason = analysis[1].strip()
-                    levels = analysis[2].strip() if len(analysis) > 2 else "Məqalədə rəqəm yoxdur."
-                    
-                    with st.expander(f"{decision} | {t}"):
-                        st.write(f"**AI-ın Dərin Rəyi:** {reason}")
-                        st.info(f"**Müəyyən edilən Səviyyələr:** {levels}")
-                        st.caption(f"Mənbə: {item.get('publisher', 'Maliyyə Agentliyi')}")
-                        if 'link' in item:
-                            st.link_button("Orijinal Mətnə keç", item['link'])
+        try:
+            # yfinance xəbərlərini çəkirik
+            raw_news = ticker.news
             
-            if found_count == 0:
-                st.warning("Aktiv analiz tapıldı, lakin AI tərəfindən emal edilə bilmədi.")
-        else:
-            st.error("Bu aktiv üçün hazırda rəsmi analiz axını tapılmadı.")
+            if not raw_news:
+                st.warning("Bu aktiv üçün hazırda canlı xəbər axını tapılmadı.")
+            else:
+                count = 0
+                for item in raw_news[:10]:
+                    # Məlumatları təhlükəsiz şəkildə çıxarırıq
+                    title = item.get('title', '')
+                    # Yahoo News-da bəzən 'summary' bəzən 'description' olur
+                    summary = item.get('summary', item.get('description', 'Mətn xülasəsi tapılmadı, başlıq əsasında analiz edilir.'))
+                    
+                    analysis = deep_ai_reader(title, summary)
+                    
+                    if analysis and len(analysis) >= 2:
+                        count += 1
+                        decision_text = analysis[0].upper()
+                        
+                        # Rəng kodlaması
+                        icon = "🟡"
+                        if "LONG" in decision_text or "🟢" in decision_text: icon = "🟢"
+                        elif "SHORT" in decision_text or "🔴" in decision_text: icon = "🔴"
+                        
+                        with st.expander(f"{icon} {decision_text} | {title[:70]}..."):
+                            st.write(f"**🧠 AI Təhlili:** {analysis[1]}")
+                            if len(analysis) > 2:
+                                st.warning(f"**🎯 Texniki Səviyyələr:** {analysis[2]}")
+                            st.markdown(f"*Mənbə: {item.get('publisher', 'Maliyyə Agentliyi')}*")
+                            if 'link' in item:
+                                st.link_button("Məqalənin tamamını oxu", item['link'])
+                
+                if count == 0:
+                    st.error("Xəbərlər tapıldı, lakin AI tərəfindən emal edilə biləcək kifayət qədər mətn yoxdur.")
+                else:
+                    st.balloons()
+                    
+        except Exception as e:
+            st.error(f"Məlumat çəkilərkən xəta baş verdi: {e}")
 
 st.sidebar.markdown("---")
-st.sidebar.write("**Sistem Necə İşləyir?**")
-st.sidebar.caption("1. Yahoo Finance API-dan tam xəbər obyektini çəkir.")
-st.sidebar.caption("2. Gemini 1.5 Flash məqalənin içindəki texniki indikatorları (RSI, Moving Average) tapır.")
-st.sidebar.caption("3. Yalnız başlıqları deyil, 'summary' hissəsini analiz edərək sizə yekun siqnal verir.")
-    
+st.sidebar.write("**Sistem Necə Analiz Edir?**")
+st.sidebar.caption("Sistem başlıqdakı 'Bullish/Bearish' sözlərinə baxmaqla qalmır, xəbərin içindəki iqtisadi şərhləri Gemini 1.5 Flash modelinə göndərir və ondan 'mentally process' etməsini istəyir.")
