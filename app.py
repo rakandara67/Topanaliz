@@ -14,58 +14,61 @@ try:
     genai.configure(api_key=API_KEY)
     ai_model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error(f"AI Xətası: {e}")
+    st.error(f"AI Başlatma Xətası: {e}")
 
-st.set_page_config(page_title="Deep AI Forex Analiz", page_icon="🧠", layout="wide")
+st.set_page_config(page_title="Forex Deep AI", page_icon="🧠", layout="wide")
 
 def get_full_article_content(url):
-    """Linkə daxil olur və analizin mətnini çəkir"""
+    """Məqalənin içini oxuyur"""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.content, 'html.parser')
-        
-        # Saytdakı əsas mətn bloklarını tapırıq (p teqləri)
         paragraphs = soup.find_all('p')
-        full_text = " ".join([p.get_text() for p in paragraphs[:10]]) # İlk 10 paraqraf bəs edir
-        return full_text[:3000] # Gemini-ni yormamaq üçün limit
+        # İlk 8 paraqrafı götürürük ki, AI-a çox yük düşməsin
+        text = " ".join([p.get_text() for p in paragraphs[:8]])
+        return text.strip()[:2500] 
     except:
         return ""
 
 def get_deep_ai_analysis(title, content):
-    """Mətnin hamısını oxuyub qərar verir"""
-    if not content:
-        return "🟡 NEYTRAL", "Məzmun oxuna bilmədi."
-
+    """Mətnin hamısını analiz edir və xətalara qarşı davamlıdır"""
+    source_text = content if len(content) > 100 else title
+    
     prompt = f"""
-    Sən peşəkar Forex analitikisən. Aşağıdakı analizi TAM oxu:
-    BAŞLIQ: {title}
-    MƏTN: {content}
+    Sən peşəkar Forex analitikisən. Aşağıdakı analizi oxu və konkret istiqamət müəyyən et:
+    "{source_text}"
     
     Tapşırıq:
-    1. Analizin nəticəsini tap: LONG (Alış), SHORT (Satış) yoxsa NEYTRAL?
-    2. Giriş (Entry), Stop Loss və Take Profit səviyyələri qeyd olunubsa tap.
-    3. Azərbaycan dilində 1-2 cümləlik çox konkret xülasə yaz.
+    1. Qərar (Yalnız biri): LONG, SHORT, NEYTRAL.
+    2. Səbəb (Azərbaycan dilində 1 cümlə).
+    3. Tapılan Səviyyələr (Giriş, TP, SL - varsa).
     
-    Format:
-    QƏRAR: [LONG/SHORT/NEYTRAL]
-    XÜLASƏ: [İzah]
-    SƏVİYYƏLƏR: [Varsa qiymətlər, yoxsa 'Yoxdur']
+    Cavabı MÜTLƏQ bu formatda ver:
+    Qərar: [LONG/SHORT/NEYTRAL]
+    Xülasə: [İzahın]
+    Səviyyə: [Qiymətlər]
     """
     try:
         response = ai_model.generate_content(prompt)
         res = response.text
         
+        # Xətanın qarşısını almaq üçün təhlükəsiz parçalama
         decision = "🟡 NEYTRAL"
         if "LONG" in res.upper(): decision = "🟢 LONG"
         elif "SHORT" in res.upper(): decision = "🔴 SHORT"
         
-        summary = res.split("XÜLASƏ:")[1].split("SƏVİYYƏLƏR:")[0].strip() if "XÜLASƏ:" in res else "Analiz olundu."
-        levels = res.split("SƏVİYYƏLƏR:")[1].strip() if "SƏVİYYƏLƏR:" in res else "Tapılmadı."
-        
+        summary = "Analiz olundu."
+        if "Xülasə:" in res:
+            summary = res.split("Xülasə:")[1].split("\n")[0].strip()
+            
+        levels = "Qeyd edilməyib"
+        if "Səviyyə:" in res:
+            levels = res.split("Səviyyə:")[1].strip()
+            
         return decision, summary, levels
     except:
-        return "🟡 NEYTRAL", "AI xətası.", "Yoxdur"
+        return "🟡 NEYTRAL", "AI cavab verə bilmədi.", "Yoxdur"
 
 def fetch_and_analyze(source, site_url, query):
     encoded_query = quote(f"site:{site_url} {query}")
@@ -73,45 +76,58 @@ def fetch_and_analyze(source, site_url, query):
     feed = feedparser.parse(rss_url)
     
     results = []
-    for entry in feed.entries[:5]: # Hər mənbədən 5 dənə (Daha dərindir deyə az götürürük)
-        with st.spinner(f"Oxunur: {entry.title[:30]}..."):
-            full_content = get_full_article_content(entry.link)
-            decision, summary, levels = get_deep_ai_analysis(entry.title, full_content)
+    # TradingView üçün mənasız linkləri filtr edirik
+    junk = ["chart", "index", "rates", "quotes", "market", "page"]
+    
+    for entry in feed.entries[:6]:
+        title = entry.title
+        if source == "TradingView" and any(x in title.lower() for x in junk):
+            continue
+            
+        with st.spinner(f"AI oxuyur: {title[:40]}..."):
+            full_text = get_full_article_content(entry.link)
+            decision, summary, levels = get_deep_ai_analysis(title, full_text)
             
             results.append({
                 "Mənbə": source,
-                "Başlıq": entry.title.split(" - ")[0],
+                "Başlıq": title.split(" - ")[0],
                 "Qərar": decision,
-                "AI Xülasə": summary,
+                "İzah": summary,
                 "Səviyyələr": levels,
                 "Link": entry.link
             })
+            time.sleep(0.5) # Limitə düşməmək üçün
     return results
 
-# --- UI ---
-st.title("🧠 Deep AI: Tam Mətn Analizi")
+# --- INTERFACE ---
+st.title("🧠 Deep AI Forex Analitik")
+st.markdown("Bu versiya məqalələri tam oxuyur və **Entry/TP/SL** səviyyələrini axtarır.")
 
-if st.button('Məqalələri İçindən Oxu və Analiz Et'):
-    all_data = []
+if st.button('Dərin Analizi Başlat'):
     sources = [
-        ("DailyForex", "dailyforex.com", "forex signals"),
-        ("FXStreet", "fxstreet.com", "technical analysis"),
-        ("TradingView", "tradingview.com", "eurusd gold analysis")
+        ("DailyForex", "dailyforex.com", "forex signals technical analysis"),
+        ("FXStreet", "fxstreet.com", "forex price forecast"),
+        ("TradingView", "tradingview.com", "technical analysis gold eurusd")
     ]
     
+    all_data = []
     for src, url, q in sources:
         all_data.extend(fetch_and_analyze(src, url, q))
         
     if all_data:
         df = pd.DataFrame(all_data)
-        st.subheader("📋 Dərin Analiz Nəticələri")
+        st.subheader("📊 Canlı Strateji Cədvəli")
         st.dataframe(df[['Mənbə', 'Başlıq', 'Qərar']], use_container_width=True)
         
-        st.subheader("🔍 Detallı Hesabat")
+        st.subheader("🔍 Detallı AI Hesabatları")
         for item in all_data:
             with st.expander(f"{item['Qərar']} | {item['Başlıq']}"):
-                st.write(f"**Mənbə:** {item['Mənbə']}")
-                st.info(f"**AI Təhlili:** {item['AI Xülasə']}")
-                st.warning(f"**Qiymət Səviyyələri:** {item['Səviyyələr']}")
-                st.link_button("Mənbəni Aç", item['Link'])
-                
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.write(f"**AI Təhlili:** {item['İzah']}")
+                    st.write(f"**Qiymət Səviyyələri:** `{item['Səviyyələr']}`")
+                with col2:
+                    st.link_button("Məqaləni tam oxu", item['Link'])
+    else:
+        st.warning("Heç bir analiz tapılmadı.")
+    
