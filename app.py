@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 import feedparser
 import google.generativeai as genai
-import requests
-from bs4 import BeautifulSoup
 from urllib.parse import quote
 import time
 import random
@@ -17,96 +15,79 @@ try:
 except Exception as e:
     st.error(f"AI Xətası: {e}")
 
-st.set_page_config(page_title="Forex Live Deep AI", page_icon="🔥", layout="wide")
+st.set_page_config(page_title="Forex Deep AI (No Block)", page_icon="🛡️", layout="wide")
 
-def get_content_carefully(url):
-    """Məqaləni tək-tək və ehtiyatla oxuyur"""
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-    }
-    try:
-        response = requests.get(url, headers=headers, timeout=15)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'html.parser')
-            # Lazımsız reklamları silirik
-            for s in soup(['script', 'style', 'aside']): s.decompose()
-            paragraphs = soup.find_all('p')
-            text = " ".join([p.get_text() for p in paragraphs if len(p.get_text()) > 40])
-            return text[:4000] if len(text) > 300 else None
-    except:
-        return None
-    return None
-
-def analyze_individually(content):
-    """Tək mətn əsasında dərin AI analizi"""
+def get_deep_analysis_from_snippet(title, summary):
+    """Sayta girmədən, mövcud geniş xülasəni analiz edir"""
     prompt = f"""
-    Aşağıdakı Forex analizini oxu və qərar ver:
-    "{content}"
+    Sən peşəkar Forex analitikisən. Aşağıdakı məlumatlar müxtəlif saytların analizləridir:
+    BAŞLIQ: {title}
+    XÜLASƏ: {summary}
     
-    Format:
-    QƏRAR: [LONG, SHORT və ya NEYTRAL]
-    SƏBƏB: [1 cümlə Azərbaycan dilində]
-    SƏVİYYƏLƏR: [Entry, SL, TP qiymətləri]
+    Tapşırıq:
+    1. Bu məlumatlara əsasən istiqaməti təyin et: LONG, SHORT və ya NEYTRAL?
+    2. Azərbaycan dilində çox qısa (maks 10 söz) izah yaz.
+    3. Əgər mətndə konkret qiymət yoxdursa, başlığa və xülasəyə əsasən cari trend səviyyəsini təxmin et.
+    
+    Format: [QƏRAR] | [İZAH] | [SƏVİYYƏ]
     """
     try:
         response = ai_model.generate_content(prompt)
         res = response.text
-        decision = "🟡 NEYTRAL"
-        if "LONG" in res.upper(): decision = "🟢 LONG"
-        elif "SHORT" in res.upper(): decision = "🔴 SHORT"
+        parts = res.split("|")
         
-        reason = res.split("SƏBƏB:")[1].split("SƏVİYYƏLƏR:")[0].strip() if "SƏBƏB:" in res else "Analiz olundu."
-        levels = res.split("SƏVİYYƏLƏR:")[1].strip() if "SƏVİYYƏLƏR:" in res else "Tapılmadı."
+        decision = "🟡 NEYTRAL"
+        if "LONG" in parts[0].upper(): decision = "🟢 LONG"
+        elif "SHORT" in parts[0].upper(): decision = "🔴 SHORT"
+        
+        reason = parts[1].strip() if len(parts) > 1 else "Trend analizi."
+        levels = parts[2].strip() if len(parts) > 2 else "Müəyyən edilmədi."
+        
         return decision, reason, levels
     except:
         return None, None, None
 
-# --- UI İNTERFEYS ---
-st.title("🔥 Canlı Forex AI Analizi")
-st.markdown("Analizlər tək-tək oxunur və tapılan kimi dərhal aşağıda görünür.")
+# --- UI ---
+st.title("🛡️ Bloklanmayan Dərin AI Analiz")
+st.markdown("Bu versiya saytlara birbaşa daxil olmur (bloklanmamaq üçün), Google-un məlumat bazasından istifadə edərək analiz edir.")
 
-if st.button('Analizləri Bir-Bir Gətir'):
+if st.button('Analizləri Bir-Bir Gətir (Güvənli Metod)'):
+    # Google News RSS-i bir az daha geniş xülasə verən formata salırıq
     sources = [
-        ("DailyForex", "dailyforex.com", "forex signals forecast"),
-        ("FXStreet", "fxstreet.com", "price forecast analysis"),
-        ("TradingView", "tradingview.com", "technical analysis eurusd xauusd")
+        ("DailyForex", "dailyforex.com", "forex signals technical"),
+        ("FXStreet", "fxstreet.com", "price action forecast"),
+        ("TradingView", "tradingview.com", "gold eurusd analysis")
     ]
     
-    # Boş bir yer yaradırıq ki, analizlər bura dolsun
     container = st.container()
-    
-    total_found = 0
+    total_count = 0
     
     for src_name, site_url, query in sources:
-        with st.status(f"{src_name} mənbəsindən analizlər çəkilir...", expanded=False):
-            feed = feedparser.parse(f"https://news.google.com/rss/search?q={quote('site:'+site_url+' '+query)}&hl=en-US&gl=US&ceid=US:en")
-            entries = feed.entries[:10]
+        # 'ceid=US:en' yerinə 'hl=en-US' istifadə edirik ki, daha çox ingilisdilli məzmun gəlsin
+        url = f"https://news.google.com/rss/search?q={quote('site:'+site_url+' '+query)}&hl=en-US&gl=US"
+        feed = feedparser.parse(url)
         
-        for entry in entries:
-            # Hər məqaləni emal etməzdən əvvəl bir az gözləyirik (bloklanmamaq üçün)
-            time.sleep(random.uniform(1, 3))
+        for entry in feed.entries[:10]:
+            # Hər birini tək-tək və fərqli vaxtda göstəririk
+            time.sleep(random.uniform(0.2, 0.8))
             
-            content = get_content_carefully(entry.link)
+            # Google RSS-in 'summary' hissəsində çox vaxt maraqlı detallar olur
+            # Onu təmizləyirik
+            clean_summary = BeautifulSoup(entry.summary, "html.parser").text if 'summary' in entry else ""
             
-            if content:
-                decision, reason, levels = analyze_individually(content)
-                
-                if decision:
-                    total_found += 1
-                    # Canlı olaraq container-ə əlavə edirik
-                    with container:
-                        with st.expander(f"{decision} | {entry.title.split(' - ')[0]}", expanded=True):
-                            col1, col2 = st.columns([3, 1])
-                            with col1:
-                                st.write(f"**Mənbə:** {src_name}")
-                                st.success(f"**AI Təhlili:** {reason}")
-                                st.warning(f"**Qiymət Səviyyələri:** `{levels}`")
-                            with col2:
-                                st.link_button("Məqaləni Aç", entry.link)
-    
-    if total_found == 0:
-        st.error("Heç bir dərin analiz tapılmadı. Saytlar hələ də girişi bloklayır.")
+            decision, reason, levels = get_deep_analysis_from_snippet(entry.title, clean_summary)
+            
+            if decision:
+                total_count += 1
+                with container:
+                    with st.expander(f"{decision} | {entry.title.split(' - ')[0]}", expanded=True):
+                        st.markdown(f"**Mənbə:** `{src_name}`")
+                        st.info(f"**AI Təhlili:** {reason}")
+                        st.warning(f"**Təxmini Səviyyələr:** {levels}")
+                        st.link_button("Mənbəyə keçid", entry.link)
+
+    if total_count == 0:
+        st.error("Məlumat tapılmadı. Zəhmət olmasa API açarını və ya axtarış sözlərini yoxlayın.")
     else:
         st.balloons()
-    
+        
