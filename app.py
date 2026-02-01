@@ -1,66 +1,72 @@
 import streamlit as st
 import google.generativeai as genai
+from googlesearch import search
+import requests
+from bs4 import BeautifulSoup
 
 # --- KONFİQURASİYA ---
-# Gemini API açarınızı bura qeyd edin
 API_KEY = "AIzaSyCYMzC7vax4vCA0FLDxeqIeHBwxHklUnao"
 
 try:
     genai.configure(api_key=API_KEY)
-    # Ən stabil model və alətləri aktiv edirik
-    model = genai.GenerativeModel(
-        model_name='gemini-1.5-flash',
-        tools=[{"code_execution": {}}] # AI-ya daxili kod yazma və icra etmə icazəsi veririk
-    )
+    model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error(f"Sistem xətası: {e}")
+    st.error(f"AI bağlantı xətası: {e}")
 
-st.set_page_config(page_title="Forex AI Final", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Forex AI Final", page_icon="📈", layout="wide")
 
-# --- UI ---
-st.title("⚡ Forex AI: Deep Context Reader")
-st.markdown("""
-Bu versiya **'Code Execution'** texnologiyası ilə işləyir. AI daxildə öz virtual mühitini yaradır 
-və bazar məlumatlarını birbaşa emal edir. Bloklanma riski yoxdur.
-""")
+st.title("📈 Forex AI: Həqiqi Mətn Analizi")
+st.markdown("Bu sistem Google-da ən son analizləri tapır, məqalələrin daxilinə girir və tam mətni AI-ya oxudur.")
 
-pair = st.text_input("Analiz obyekti (Məs: EURUSD, GOLD, BTC):", "EURUSD")
+query = st.text_input("Axtarış sözü:", "EURUSD technical analysis investing.com")
 
 if st.button('Dərindən Analiz Et'):
-    with st.spinner('AI daxili mühitdə bazar təhlillərini oxuyur...'):
-        # Promptu elə qururuq ki, AI özü daxildə data toplasın
-        full_prompt = f"""
-        Sən peşəkar bir Forex analitikisən. 
-        Mövzu: {pair} üçün son texniki analizlər və bazar vəziyyəti.
-        
-        Səndən tələblər:
-        1. İnternetdəki ən son peşəkar mənbələrdən (Investing, FXStreet, Reuters) gələn tam mətnli məlumatları analiz et.
-        2. Qəti qərar ver: 🟢 LONG, 🔴 SHORT və ya 🟡 NEYTRAL.
-        3. Texniki göstəriciləri (RSI, Moving Averages) dərindən şərh et.
-        4. Entry, Stop Loss və Take Profit səviyyələrini mütləq göstər.
-        
-        Cavabı Azərbaycan dilində, çox səliqəli və peşəkar formatda təqdim et.
-        """
-        
+    with st.spinner('Məqalələr oxunur...'):
         try:
-            # Buradakı generate_content heç bir əlavə tool konfiqurasiyası tələb etmir
-            response = model.generate_content(full_prompt)
+            # 1. Google-da son analizləri tapırıq
+            links = []
+            for j in search(query, num_results=3):
+                links.append(j)
             
-            if response.text:
-                st.success("Analiz uğurla tamamlandı!")
-                
-                # Nəticəni vizual olaraq gözəl göstərmək
-                st.markdown("---")
-                st.markdown(response.text)
-                st.balloons()
+            if not links:
+                st.warning("Məqalə tapılmadı.")
             else:
-                st.warning("AI cavab qaytarmadı. Zəhmət olmasa bir az sonra yenidən yoxlayın.")
+                for link in links:
+                    st.write(f"📖 Oxunur: {link}")
+                    
+                    # 2. Saytın daxilinə girib mətni çəkirik
+                    try:
+                        header = {'User-Agent': 'Mozilla/5.0'}
+                        page = requests.get(link, headers=header, timeout=10)
+                        soup = BeautifulSoup(page.content, 'html.parser')
+                        
+                        # Saytdakı lazımsız reklamları atıb əsas mətni götürürük
+                        paragraphs = soup.find_all('p')
+                        article_text = " ".join([p.get_text() for p in paragraphs[:15]]) # İlk 15 paraqraf bəs edir
+                        
+                        if len(article_text) > 500:
+                            # 3. AI-ya tam mətni göndərib analiz etdiririk
+                            prompt = f"""
+                            Aşağıdakı Forex analiz məqaləsini dərindən oxu:
+                            "{article_text}"
+                            
+                            Səndən tələblər:
+                            1. Qərar: 🟢 LONG, 🔴 SHORT və ya 🟡 NEYTRAL?
+                            2. Səbəb: Azərbaycan dilində 1 cümləlik texniki izah.
+                            3. Səviyyələr: Entry, SL, TP rəqəmlərini tap.
+                            """
+                            response = model.generate_content(prompt)
+                            
+                            with st.chat_message("assistant"):
+                                st.markdown(response.text)
+                                st.caption(f"Mənbə: {link}")
+                        else:
+                            st.write("⚠️ Bu saytın mətni çox qısadır, növbətiyə keçilir.")
+                    except:
+                        st.write("❌ Bu sayta giriş mümkün olmadı.")
                 
+                st.success("Bütün mümkün analizlər tamamlandı!")
+                st.balloons()
         except Exception as e:
-            st.error(f"Xəta baş verdi: {str(e)}")
-            st.info("İpucu: API açarınızın 'Gemini 1.5 Flash' modelinə icazəsi olduğundan əmin olun.")
+            st.error(f"Sistem xətası: {e}")
 
-st.sidebar.markdown("### Niyə bu üsul?")
-st.sidebar.write("✅ **Bloklanmır:** Kod AI-nın daxili təhlükəsiz mühitində icra olunur.")
-st.sidebar.write("✅ **Dəqiqdir:** Başlıqlara deyil, daxili data strukturlarına baxır.")
-st.sidebar.write("✅ **Sürətlidir:** Xarici API-ların (NewsData və s.) gecikməsi yoxdur.")
