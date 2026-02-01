@@ -1,94 +1,82 @@
 import streamlit as st
 import pandas as pd
 import feedparser
-import requests
-from bs4 import BeautifulSoup
 import re
 
-st.set_page_config(page_title="Forex Analiz Pro", layout="wide")
+st.set_page_config(page_title="Forex Analiz & Qərar", page_icon="📈")
 
-def analyze_signal(text):
-    """Mətndən Long/Short qərarını və xülasəni çıxarır"""
+def get_sentiment(text):
+    """Mətni analiz edib istiqamət və xülasə təyin edir"""
     text = text.lower()
     
-    # Açar sözlər
-    long_patterns = [r'bullish', r'buy', r'long', r'yükseliş', r'artış', r'destek', r'alım']
-    short_patterns = [r'bearish', r'sell', r'short', r'düşüş', r'gerileme', r'direnç', r'satış']
+    # Açar sözlər bazası
+    long_keywords = ['bullish', 'long', 'yükseliş', 'artış', 'destek', 'alım', 'buy', 'higher']
+    short_keywords = ['bearish', 'short', 'düşüş', 'gerileme', 'direnç', 'satış', 'sell', 'lower']
     
-    is_long = any(re.search(p, text) for p in long_patterns)
-    is_short = any(re.search(p, text) for p in short_patterns)
+    # Qərar tərəfi
+    is_long = any(word in text for word in long_keywords)
+    is_short = any(word in text for word in short_keywords)
     
-    if is_long:
-        return "🟢 LONG (Alış)", "Analiz qiymətlərin artacağını və alış təzyiqinin güclü olduğunu göstərir."
-    elif is_short:
-        return "🔴 SHORT (Satış)", "Analiz qiymətlərin enəcəyini və satış təzyiqinin artdığını göstərir."
+    if is_long and not is_short:
+        return "🟢 LONG", "Alıcılar üstünlük təşkil edir. Artım ehtimalı yüksəkdir."
+    elif is_short and not is_long:
+        return "🔴 SHORT", "Satıcılar təzyiqi artırır. Eniş gözlənilir."
     else:
-        return "🟡 NEYTRAL", "Bazar hazırda qeyri-müəyyəndir, konkret istiqamət siqnalı yoxdur."
+        return "🟡 NEYTRAL", "Bazar hazırda qərarsızdır, gözləmək tövsiyə olunur."
 
-def get_dailyforex():
-    # RSS bloklanmır və daha sürətlidir
-    feed_url = "https://www.dailyforex.com/forex-technical-analysis/rss"
-    feed = feedparser.parse(feed_url)
-    results = []
+def fetch_news(site_name, site_url):
+    """Google News vasitəsilə saytın son xəbərlərini bloklanmadan çəkir"""
+    rss_url = f"https://news.google.com/rss/search?q=site:{site_url}+forex+analysis&hl=en-US&gl=US&ceid=US:en"
+    feed = feedparser.parse(rss_url)
     
+    results = []
     for entry in feed.entries[:10]:
-        qerar, xulasa = analyze_signal(entry.title + " " + entry.description)
+        decision, summary = get_sentiment(entry.title)
         results.append({
-            "Mənbə": "DailyForex",
+            "Mənbə": site_name,
             "Analiz": entry.title,
-            "Qərar": qerar,
-            "Xülasə (AZ)": xulasa,
+            "Qərar": decision,
+            "Xülasə (AZ)": summary,
             "Link": entry.link
         })
     return results
 
-def get_fxstreet():
-    url = "https://www.fxstreet.com.tr/analysis/latest"
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    results = []
-    try:
-        resp = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(resp.content, 'html.parser')
-        # FXStreet TR-nin xüsusi strukturu
-        items = soup.find_all('h4', class_='fxs_headline_tiny')
+# --- INTERFACE ---
+st.title("📊 Forex Canlı Analiz Mərkəzi")
+st.info("DailyForex və FXStreet analizləri əsasında avtomatik qərarlar.")
+
+if st.button('Məlumatları Yenilə'):
+    with st.spinner('Analizlər emal edilir...'):
+        # Bloklanmayan mənbələrdən çəkim
+        df_daily = fetch_news("DailyForex", "dailyforex.com")
+        df_fx = fetch_news("FXStreet", "fxstreet.com")
         
-        for item in items[:10]:
-            a_tag = item.find('a')
-            if a_tag:
-                title = a_tag.text.strip()
-                link = a_tag['href']
-                qerar, xulasa = analyze_signal(title)
-                results.append({
-                    "Mənbə": "FXStreet TR",
-                    "Analiz": title,
-                    "Qərar": qerar,
-                    "Xülasə (AZ)": xulasa,
-                    "Link": link
-                })
-    except:
-        pass
-    return results
-
-# UI
-st.title("📊 Forex Analiz: Long/Short Qərarları")
-
-if st.button('Məlumatları Yenilə və Analiz Et'):
-    with st.spinner('Canlı analizlər toplanır...'):
-        all_data = get_dailyforex() + get_fxstreet()
+        all_data = df_daily + df_fx
         
         if all_data:
             df = pd.DataFrame(all_data)
             
-            # Cədvəl görünüşü
-            st.subheader("📌 Son 20 Analiz İcmalı")
-            st.table(df[['Mənbə', 'Analiz', 'Qərar']])
+            # 1. Cədvəl Görünüşü
+            st.subheader("📌 Son Analizlər və Siqnallar")
+            st.dataframe(df[['Mənbə', 'Analiz', 'Qərar']], use_container_width=True)
             
-            # Detallı Kartlar
-            st.subheader("📝 Detallı Xülasələr")
+            # 2. Detallı Analiz Kartları
+            st.subheader("📝 Qərar Xülasələri")
             for item in all_data:
-                with st.expander(f"{item['Qərar']} | {item['Mənbə']}: {item['Analiz']}"):
-                    st.write(f"**Vəziyyət:** {item['Xülasə (AZ)']}")
-                    st.write(f"[Mənbəyə keçid]({item['Link']})")
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.write(f"**{item['Mənbə']}**: {item['Analiz']}")
+                    st.caption(f"İzah: {item['Xülasə (AZ)']}")
+                with col2:
+                    st.success(item['Qərar']) if "LONG" in item['Qərar'] else st.error(item['Qərar']) if "SHORT" in item['Qərar'] else st.warning(item['Qərar'])
+                    st.markdown(f"[Oxu]({item['Link']})")
+                st.divider()
         else:
-            st.error("Məlumat tapılmadı. Zəhmət olmasa bir az sonra yenidən cəhd edin.")
-        
+            st.warning("Hal-hazırda yeni analiz tapılmadı. Bir az sonra yenidən yoxlayın.")
+
+st.sidebar.markdown("""
+### Necə istifadə etməli?
+1. **Yenilə** düyməsini basın.
+2. **Qərar** sütununda LONG və ya SHORT siqnallarına baxın.
+3. **Xülasə** hissəsində Azərbaycan dilində qısa izahı oxuyun.
+""")
