@@ -4,105 +4,80 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import re
 
-# Səhifə konfiqurasiyası
 st.set_page_config(page_title="Forex Analiz Xülasəsi", layout="wide")
-
-def translate_to_az(text):
-    """Sadə lüğət əsaslı və ya süni intellekt əvəzi tərcümə (Nümunə üçün)"""
-    translations = {
-        "Technical Analysis": "Texniki Analiz",
-        "Forecast": "Proqnoz",
-        "US Dollar": "ABŞ Dolları",
-        "Gold": "Qızıl",
-        "Silver": "Gümüş",
-        "Bullish": "Artım meyilli",
-        "Bearish": "Eniş meyilli",
-        "Buying": "Alış",
-        "Selling": "Satış"
-    }
-    for eng, aze in translations.items():
-        text = text.replace(eng, aze)
-    return text
-
-def extract_levels(text):
-    """Mətndən rəqəmləri (Entry, TP, SL) tapmağa çalışır"""
-    levels = re.findall(r"(\d+\.\d+)", text)
-    return ", ".join(levels) if levels else "Qeyd olunmayıb"
 
 def get_dailyforex():
     url = "https://www.dailyforex.com/forex-technical-analysis/page-1"
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    response = requests.get(url, headers=headers)
-    soup = BeautifulSoup(response.content, 'html.parser')
+    # Saytın bizi bloklamaması üçün daha geniş headers
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
     
-    analizler = []
-    items = soup.find_all('div', class_='daily-analysis-item', limit=10)
-    
-    for item in items:
-        title = item.find('h2').text.strip()
-        desc = item.find('p').text.strip()
-        link = "https://www.dailyforex.com" + item.find('a')['href']
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        analizler = []
         
-        analizler.append({
-            "Mənbə": "DailyForex",
-            "Analiz": translate_to_az(title),
-            "Xülasə": translate_to_az(desc[:150] + "..."),
-            "Səviyyələr (E/TP/SL)": extract_levels(desc),
-            "Link": link
-        })
-    return analizler
+        # DailyForex-in ən son strukturu: adətən 'article' və ya spesifik class-lar
+        items = soup.find_all('div', class_='daily-analysis-item')
+        if not items: # Alternativ struktur yoxlaması
+            items = soup.select('.analysis-list-item') or soup.find_all('article')
+
+        for item in items[:10]:
+            title_el = item.find('h2') or item.find('h3')
+            link_el = item.find('a')
+            if title_el and link_el:
+                title = title_el.text.strip()
+                link = "https://www.dailyforex.com" + link_el['href'] if not link_el['href'].startswith('http') else link_el['href']
+                
+                analizler.append({
+                    "Mənbə": "DailyForex",
+                    "Analiz": title,
+                    "Link": link
+                })
+        return analizler
+    except Exception as e:
+        return [{"Mənbə": "DailyForex", "Analiz": f"Xəta: {e}", "Link": ""}]
 
 def get_fxstreet():
     url = "https://www.fxstreet.com.tr/analysis/latest"
     headers = {'User-Agent': 'Mozilla/5.0'}
-    response = requests.get(url, headers=headers)
-    soup = BeautifulSoup(response.content, 'html.parser')
-    
-    analizler = []
-    # FXStreet TR strukturu üçün uyğunlaşdırma
-    items = soup.find_all('article', limit=10)
-    
-    for item in items:
-        title_el = item.find('h4') or item.find('h2')
-        if not title_el: continue
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        analizler = []
         
-        title = title_el.text.strip()
-        link = item.find('a')['href']
+        # FXStreet TR strukturu
+        items = soup.select('h4.fxs_headline_tiny') or soup.find_all('article')
         
-        analizler.append({
-            "Mənbə": "FXStreet TR",
-            "Analiz": title,
-            "Xülasə": "Ətraflı linkdə",
-            "Səviyyələr (E/TP/SL)": "Məqalədə",
-            "Link": link
-        })
-    return analizler
+        for item in items[:10]:
+            link_el = item.find('a')
+            if link_el:
+                title = link_el.text.strip()
+                link = link_el['href']
+                analizler.append({
+                    "Mənbə": "FXStreet TR",
+                    "Analiz": title,
+                    "Link": link
+                })
+        return analizler
+    except Exception as e:
+        return [{"Mənbə": "FXStreet TR", "Analiz": f"Xəta: {e}", "Link": ""}]
 
-# UI Hissəsi
-st.title("📊 Forex Son 10 Analiz (Xülasə)")
+st.title("📊 Forex Son 10 Analiz")
 
 if st.button('Məlumatları Yenilə'):
     with st.spinner('Analizlər toplanır...'):
-        try:
-            df_data = get_dailyforex() + get_fxstreet()
-            df = pd.DataFrame(df_data)
+        all_data = get_dailyforex() + get_fxstreet()
+        if all_data:
+            df = pd.DataFrame(all_data)
+            st.dataframe(df, use_container_width=True)
             
-            # Cədvəli göstər
-            st.table(df)
-            
-            for i, row in df.iterrows():
-                with st.expander(f"{row['Mənbə']}: {row['Analiz']}"):
-                    st.write(f"**Xülasə:** {row['Xülasə']}")
-                    st.write(f"**Ehtimal olunan səviyyələr:** {row['Səviyyələr (E/TP/SL)']}")
-                    st.write(f"[Mənbəyə keçid]({row['Link']})")
-        except Exception as e:
-            st.error(f"Xəta baş verdi: {e}")
-else:
-    st.info("Analizləri görmək üçün 'Yenilə' düyməsinə basın.")
+            st.subheader("📌 Qısa Xülasələr")
+            for item in all_data:
+                if item["Link"]:
+                    st.markdown(f"**[{item['Mənbə']}]** {item['Analiz']} — [Məqaləni oxu]({item['Link']})")
+        else:
+            st.warning("Heç bir məlumat tapılmadı. Sayt strukturu dəyişmiş ola bilər.")
 
-st.sidebar.markdown("""
-### Necə işləyir?
-1. **DailyForex** və **FXStreet TR** saytlarına sorğu göndərir.
-2. Ən son 10 analizi skan edir.
-3. Başlıqları AZ dilinə çevirir və mətndəki rəqəmləri ayırır.
-""")
+st.sidebar.info("Əgər 'empty' görürsünüzsə, saytlar anlıq girişi bloklayır. Bir neçə saniyə sonra yenidən cəhd edin.")
