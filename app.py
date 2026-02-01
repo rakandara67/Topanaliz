@@ -15,120 +15,98 @@ try:
     genai.configure(api_key=API_KEY)
     ai_model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error(f"AI Konfiqurasiya xətası: {e}")
+    st.error(f"AI Xətası: {e}")
 
-st.set_page_config(page_title="Forex Deep 10 Pro", page_icon="🧠", layout="wide")
+st.set_page_config(page_title="Forex Live Deep AI", page_icon="🔥", layout="wide")
 
-def get_content_smart(url):
-    """Bloklanmadan məqalə mətni çəkir"""
-    user_agents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-    ]
+def get_content_carefully(url):
+    """Məqaləni tək-tək və ehtiyatla oxuyur"""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+    }
     try:
-        # Hər dəfə fərqli User-Agent istifadə edərək saytı aldadırıq
-        headers = {'User-Agent': random.choice(user_agents)}
-        response = requests.get(url, headers=headers, timeout=12)
-        
+        response = requests.get(url, headers=headers, timeout=15)
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, 'html.parser')
-            # Yalnız əsas məqalə gövdəsini tapmağa çalışırıq
+            # Lazımsız reklamları silirik
+            for s in soup(['script', 'style', 'aside']): s.decompose()
             paragraphs = soup.find_all('p')
-            text = " ".join([p.get_text() for p in paragraphs if len(p.get_text()) > 50])
-            return text[:4500] if len(text) > 200 else None
+            text = " ".join([p.get_text() for p in paragraphs if len(p.get_text()) > 40])
+            return text[:4000] if len(text) > 300 else None
     except:
         return None
     return None
 
-def ai_deep_analyze(content):
-    """Mətni oxuyub LONG/SHORT təyin edir"""
+def analyze_individually(content):
+    """Tək mətn əsasında dərin AI analizi"""
     prompt = f"""
-    Sən peşəkar treyder və analitikisən. Aşağıdakı analizi TAM OXU:
+    Aşağıdakı Forex analizini oxu və qərar ver:
     "{content}"
     
-    TƏLƏB:
-    1. Qərar: LONG, SHORT və ya NEYTRAL? (Mətndəki texniki göstəricilərə əsaslan).
-    2. Səbəb: Azərbaycan dilində 1 cümləlik çox konkret izah.
-    3. Səviyyələr: Varsa Entry, SL, TP qiymətlərini çıxar.
-    
-    Format: [QƏRAR] | [İZAH] | [SƏVİYYƏLƏR]
+    Format:
+    QƏRAR: [LONG, SHORT və ya NEYTRAL]
+    SƏBƏB: [1 cümlə Azərbaycan dilində]
+    SƏVİYYƏLƏR: [Entry, SL, TP qiymətləri]
     """
     try:
         response = ai_model.generate_content(prompt)
-        parts = response.text.split("|")
-        
-        decision_raw = parts[0].upper()
+        res = response.text
         decision = "🟡 NEYTRAL"
-        if "LONG" in decision_raw: decision = "🟢 LONG"
-        elif "SHORT" in decision_raw: decision = "🔴 SHORT"
+        if "LONG" in res.upper(): decision = "🟢 LONG"
+        elif "SHORT" in res.upper(): decision = "🔴 SHORT"
         
-        summary = parts[1].strip() if len(parts) > 1 else "Analiz dərindən emal edildi."
-        levels = parts[2].strip() if len(parts) > 2 else "Mətndə konkret rəqəm tapılmadı."
-        
-        return decision, summary, levels
+        reason = res.split("SƏBƏB:")[1].split("SƏVİYYƏLƏR:")[0].strip() if "SƏBƏB:" in res else "Analiz olundu."
+        levels = res.split("SƏVİYYƏLƏR:")[1].strip() if "SƏVİYYƏLƏR:" in res else "Tapılmadı."
+        return decision, reason, levels
     except:
         return None, None, None
 
-# --- UI ---
-st.title("🧠 Deep AI: 10 Analizin Tam Təhlili")
-st.info("Sistem başlıqlara baxmır, 30-a yaxın məqalənin daxilinə girib real siqnalları axtarır.")
+# --- UI İNTERFEYS ---
+st.title("🔥 Canlı Forex AI Analizi")
+st.markdown("Analizlər tək-tək oxunur və tapılan kimi dərhal aşağıda görünür.")
 
-if st.button('Analizi Başlat (Dərin Axtarış)'):
+if st.button('Analizləri Bir-Bir Gətir'):
     sources = [
-        ("DailyForex", "dailyforex.com", "forex signals technical analysis"),
-        ("FXStreet", "fxstreet.com", "price forecast today"),
-        ("TradingView", "tradingview.com", "eurusd gold analysis")
+        ("DailyForex", "dailyforex.com", "forex signals forecast"),
+        ("FXStreet", "fxstreet.com", "price forecast analysis"),
+        ("TradingView", "tradingview.com", "technical analysis eurusd xauusd")
     ]
     
-    all_results = []
-    progress = st.progress(0)
-    status = st.empty()
+    # Boş bir yer yaradırıq ki, analizlər bura dolsun
+    container = st.container()
     
-    # Bütün linkləri toplayırıq
-    entries_to_process = []
-    for src, url, q in sources:
-        feed = feedparser.parse(f"https://news.google.com/rss/search?q={quote('site:'+url+' '+q)}&hl=en-US&gl=US&ceid=US:en")
-        for e in feed.entries[:10]:
-            entries_to_process.append((src, e))
-
-    total = len(entries_to_process)
+    total_found = 0
     
-    for i, (src, entry) in enumerate(entries_to_process):
-        status.text(f"Məqalə oxunur ({i+1}/{total}): {entry.title[:45]}...")
-        progress.progress((i + 1) / total)
+    for src_name, site_url, query in sources:
+        with st.status(f"{src_name} mənbəsindən analizlər çəkilir...", expanded=False):
+            feed = feedparser.parse(f"https://news.google.com/rss/search?q={quote('site:'+site_url+' '+query)}&hl=en-US&gl=US&ceid=US:en")
+            entries = feed.entries[:10]
         
-        # 1. Sayta daxil ol
-        full_text = get_content_smart(entry.link)
-        
-        if full_text:
-            # 2. AI Analizi
-            decision, summary, levels = ai_deep_analyze(full_text)
-            if decision:
-                all_results.append({
-                    "Mənbə": src,
-                    "Başlıq": entry.title.split(" - ")[0],
-                    "Qərar": decision,
-                    "İzah": summary,
-                    "Səviyyələr": levels,
-                    "Link": entry.link
-                })
-        
-        # BLOKLANMAMAQ ÜÇÜN VACİB: Hər məqalə arası təsadüfi fasilə
-        time.sleep(random.uniform(0.5, 1.5))
-
-    status.success(f"Analiz tamamlandı! {len(all_results)} dərin analiz tapıldı.")
+        for entry in entries:
+            # Hər məqaləni emal etməzdən əvvəl bir az gözləyirik (bloklanmamaq üçün)
+            time.sleep(random.uniform(1, 3))
+            
+            content = get_content_carefully(entry.link)
+            
+            if content:
+                decision, reason, levels = analyze_individually(content)
+                
+                if decision:
+                    total_found += 1
+                    # Canlı olaraq container-ə əlavə edirik
+                    with container:
+                        with st.expander(f"{decision} | {entry.title.split(' - ')[0]}", expanded=True):
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.write(f"**Mənbə:** {src_name}")
+                                st.success(f"**AI Təhlili:** {reason}")
+                                st.warning(f"**Qiymət Səviyyələri:** `{levels}`")
+                            with col2:
+                                st.link_button("Məqaləni Aç", entry.link)
     
-    if all_results:
-        df = pd.DataFrame(all_results)
-        st.subheader("📋 AI Siqnal Cədvəli")
-        st.dataframe(df[['Mənbə', 'Başlıq', 'Qərar']], use_container_width=True)
-        
-        for item in all_results:
-            with st.expander(f"{item['Qərar']} | {item['Başlıq']}"):
-                st.markdown(f"**AI Təhlili:** {item['İzah']}")
-                st.code(f"Texniki Səviyyələr: {item['Səviyyələr']}")
-                st.link_button("Mənbəni Aç", item['Link'])
+    if total_found == 0:
+        st.error("Heç bir dərin analiz tapılmadı. Saytlar hələ də girişi bloklayır.")
     else:
-        st.error("Saytlar girişi blokladı. Zəhmət olmasa 5-10 dəqiqə sonra yenidən yoxlayın.")
+        st.balloons()
     
