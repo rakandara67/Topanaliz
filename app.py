@@ -1,85 +1,72 @@
 import streamlit as st
-import requests
 import google.generativeai as genai
-import feedparser
-from bs4 import BeautifulSoup
 
 # --- KONFİQURASİYA ---
-GEMINI_API_KEY = "AIzaSyCYMzC7vax4vCA0FLDxeqIeHBwxHklUnao"
-NEWS_API_KEY = "pub_8a60966e639742c09af24649e4e41784"
+API_KEY = "AIzaSyCYMzC7vax4vCA0FLDxeqIeHBwxHklUnao"
 
 try:
-    genai.configure(api_key=GEMINI_API_KEY)
-    ai_model = genai.GenerativeModel('gemini-1.5-flash')
+    genai.configure(api_key=API_KEY)
+    # Google Search funksiyasını aktivləşdiririk
+    model = genai.GenerativeModel(
+        model_name='gemini-1.5-flash',
+        tools=[{"google_search_retrieval": {}}] 
+    )
 except Exception as e:
-    st.error(f"AI Xətası: {e}")
+    st.error(f"Sistem xətası: {e}")
 
-st.set_page_config(page_title="Forex Deep Mind Pro", page_icon="🏦", layout="wide")
-
-def deep_ai_analysis(full_text):
-    """Mətnin daxilinə girib texniki süzgəcdən keçirir"""
-    prompt = f"""
-    Sən peşəkar Forex analitikisən. Aşağıdakı bazar təhlilini dərindən oxu:
-    "{full_text[:4000]}"
-    
-    Tapşırıq:
-    1. Qərar: 🟢 LONG, 🔴 SHORT və ya 🟡 NEYTRAL?
-    2. Səbəb: Azərbaycan dilində 1 cümləlik dəqiq texniki izah.
-    3. Səviyyələr: Entry, SL, TP rəqəmlərini tap.
-    
-    Format: [QƏRAR] | [İZAH] | [SƏVİYYƏLƏR]
-    """
-    try:
-        response = ai_model.generate_content(prompt)
-        return response.text.split("|")
-    except:
-        return None
+st.set_page_config(page_title="Forex AI Oracle", page_icon="🔮", layout="wide")
 
 # --- UI ---
-st.title("🏦 Forex Deep Mind: Professional Hub")
-st.markdown("Bu sistem rəsmi API və ehtiyat xəbər kanallarından **tam mətnləri** toplayıb analiz edir.")
+st.title("🔮 Forex AI Oracle: Canlı Bazar Təhlili")
+st.markdown("""
+Bu sistem artıq saytlara girmir. O, birbaşa **Google-un ən son məlumat bazasını** tarayaraq 
+peşəkar agentliklərin (Reuters, Investing, FXStreet) tam təhlillərini oxuyur.
+""")
 
-selected_pair = st.selectbox("Analiz obyekti:", ["EURUSD", "GBPUSD", "XAUUSD (Gold)", "BTCUSD"])
+col1, col2 = st.columns([2, 1])
+with col1:
+    pair = st.text_input("Analiz ediləcək cütlük/aktiv:", "EURUSD technical analysis today")
+with col2:
+    style = st.selectbox("Analiz dərinliyi:", ["Normal", "Çox Dərin (Full Text)"])
 
-if st.button('Hər Bir Analizi Dərindən Oxu'):
-    reports = []
-    
-    with st.status("Məlumatlar müxtəlif mənbələrdən toplanır...", expanded=True) as status:
-        # 1-Cİ MƏNBƏ: NewsData API
-        st.write("🔍 NewsData API yoxlanılır...")
-        url = f"https://newsdata.io/api/1/news?apikey={NEWS_API_KEY}&q={selected_pair}&language=en"
+if st.button('Məqalələri Oxu və Qərar Ver'):
+    with st.spinner('Google üzərindən dünya agentliklərinin tam mətnləri analiz edilir...'):
+        prompt = f"""
+        Aşağıdakı mövzu üzrə internetdəki son 24 saatın ən peşəkar maliyyə analizlərini (Reuters, FXStreet, Investing) tap:
+        "{pair}"
+        
+        Tapşırıq:
+        1. Ən azı 3 fərqli analitikin fikrini dərindən oxu.
+        2. Qəti bir qərar çıxar: 🟢 LONG (Alış), 🔴 SHORT (Satış) və ya 🟡 NEYTRAL.
+        3. Azərbaycan dilində mətndəki texniki səbəbləri (RSI, Trend, Support/Resistance) izah et.
+        4. Mətndə gördüyün bütün qiymət səviyyələrini (Entry, SL, TP) qeyd et.
+        
+        Cavabı bu formatda ver:
+        [QƏRAR]: ...
+        [DETALLI ANALİZ]: ...
+        [TEXNİKİ SƏVİYYƏLƏR]: ...
+        [MƏNBƏLƏR]: (Oxuduğun saytların adları)
+        """
+        
         try:
-            r = requests.get(url, timeout=10)
-            data = r.json()
-            for art in data.get('results', [])[:3]:
-                content = art.get('content') or art.get('description', '')
-                if len(content) > 100:
-                    reports.append({"title": art['title'], "text": content, "source": "NewsData"})
-        except:
-            st.write("⚠️ NewsData limitdədir və ya xəta verdi.")
+            response = model.generate_content(prompt)
+            
+            if response.text:
+                st.success("Analiz tamamlandı!")
+                # Nəticəni vizual bloklara bölək
+                res_text = response.text
+                
+                # Ekranda gözəl göstərmək
+                st.markdown("### 📊 AI-ın Yekun Bazar Rəyi")
+                st.write(res_text)
+                
+                st.balloons()
+            else:
+                st.warning("Məlumat tapılmadı. Zəhmət olmasa başqa bir cütlük yoxlayın.")
+                
+        except Exception as e:
+            st.error(f"Analiz zamanı xəta: {e}")
 
-        # 2-Cİ MƏNBƏ (Fallback): RSS Feeds (Bloklanmayan rəsmi lentlər)
-        if len(reports) < 2:
-            st.write("🔄 Ehtiyat xəbər kanallarına keçid edilir...")
-            rss_url = "https://www.dailyforex.com/forex-technical-analysis/rss"
-            feed = feedparser.parse(rss_url)
-            for entry in feed.entries[:5]:
-                if selected_pair.lower() in entry.title.lower():
-                    clean_text = BeautifulSoup(entry.summary, "html.parser").get_text()
-                    reports.append({"title": entry.title, "text": clean_text, "source": "DailyForex RSS"})
-
-        # ANALİZ MƏRHƏLƏSİ
-        if reports:
-            st.write(f"✅ {len(reports)} analiz mətni tapıldı. AI oxumağa başlayır...")
-            for rep in reports:
-                analysis = deep_ai_analysis(rep['text'])
-                if analysis and len(analysis) >= 2:
-                    decision = analysis[0].strip()
-                    with st.expander(f"{decision} | {rep['title']}"):
-                        st.write(f"**🧠 AI Təhlili:** {analysis[1].strip()}")
-                        st.warning(f"**🎯 Texniki Səviyyələr:** {analysis[2].strip() if len(analysis)>2 else '-'}")
-                        st.caption(f"Mənbə: {rep['source']}")
-            status.update(label="Analiz tamamlandı!", state="complete")
-        else:
-            st.error("Heç bir mənbədən məlumat alınmadı. Lütfən API açarını və ya interneti yoxlayın.")
-    
+st.sidebar.markdown("---")
+st.sidebar.info("Bu metod saytların 'bot bloklamasını' tamamilə aşır, çünki məlumatı Google AI özü daxildən gətirir.")
+        
