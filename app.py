@@ -1,50 +1,50 @@
 import streamlit as st
-from googlesearch import search
+import feedparser
 import requests
-import json
 
 # --- KONFİQURASİYA ---
 API_KEY = "AIzaSyCYMzC7vax4vCA0FLDxeqIeHBwxHklUnao"
 
-def get_ai_summary(text):
+def get_ai_analysis(text):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
-    prompt = f"Aşağıdakı Forex analizini Azərbaycan dilində 3 bəndlə xülasə et (Trend, Səviyyələr, Qərar): {text}"
+    prompt = f"Aşağıdakı Forex analizini Azərbaycan dilində xülasə et. Trend, Giriş və SL/TP qeyd et: {text}"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, timeout=10)
         return response.json()['candidates'][0]['content']['parts'][0]['text']
     except:
-        return "AI təhlili zamanı xəta baş verdi."
+        return "AI təhlili zamanı xəta. Mətni kopyaladığınızdan əmin olun."
 
-st.set_page_config(page_title="TradingView Analiz Hub", layout="wide")
-st.title("📈 TradingView Analiz Mərkəzi")
+st.set_page_config(page_title="TradingView Feed Pro", layout="wide")
+st.title("📈 TradingView Canlı Analiz Lenti")
 
-pair = st.selectbox("Aktiv seçin:", ["EURUSD", "GBPUSD", "GOLD", "BTCUSD"])
+# Aktiv seçimi
+symbol = st.selectbox("Aktiv seçin:", ["EURUSD", "GBPUSD", "XAUUSD", "BTCUSD"])
 
-# 1. LİNKLƏRİN TAPILMASI
-if st.button(f"{pair} üçün son analizləri tap"):
-    with st.spinner('TradingView bazası yoxlanılır...'):
-        query = f"site:tradingview.com {pair} technical analysis today"
-        links = list(search(query, num_results=10))
+# RSS vasitəsilə linkləri gətiririk
+if st.button(f"{symbol} Son Analizləri Gətir"):
+    with st.spinner('TradingView-dan son məlumatlar alınır...'):
+        # TradingView-un rəsmi analiz lenti
+        rss_url = f"https://www.tradingview.com/feed/?symbol={symbol}"
+        feed = feedparser.parse(rss_url)
         
-        st.subheader(f"🔗 {pair} üçün Son 10 Analiz Linki:")
-        for i, link in enumerate(links, 1):
-            st.markdown(f"{i}. [Analizi Aç: {link.split('/')[-2]}]({link})")
+        if feed.entries:
+            st.subheader(f"🔗 {symbol} üçün Son Analizlər:")
+            for i, entry in enumerate(feed.entries[:10], 1):
+                # Linkləri və başlıqları göstəririk
+                st.markdown(f"{i}. **{entry.title}**")
+                st.markdown(f"   👉 [Analizə baxmaq üçün klikləyin]({entry.link})")
+                st.write("---")
+        else:
+            st.warning("Hazırda bu aktiv üçün canlı link tapılmadı. Bir az sonra yenidən yoxlayın.")
 
-st.markdown("---")
-
-# 2. ANALİZ EDİCİ (Kopyala-Yapışdır hissəsi)
-st.subheader("📝 Seçdiyiniz Analizin Sürətli Xülasəsi")
-st.info("Yuxarıdakı linklərdən birini açın, mətni kopyalayıb aşağıya yapışdırın.")
-
-user_text = st.text_area("Analiz mətnini bura daxil edin:", height=150)
+st.markdown("### 📝 Analiz Edici")
+st.info("Yuxarıdakı linklərdən birini açıb mətni bura yapışdırın:")
+user_input = st.text_area("Analiz mətni:", height=150)
 
 if st.button("AI Xülasəni Çıxar"):
-    if user_text:
-        with st.spinner('AI oxuyur...'):
-            summary = get_ai_summary(user_text)
-            st.success("✅ AI-nın Yekun Rəyi:")
-            st.write(summary)
-    else:
-        st.warning("Zəhmət olmasa əvvəlcə mətni yapışdırın.")
-        
+    if user_input:
+        with st.spinner('Analiz edilir...'):
+            st.success("🤖 AI-nın Rəyi:")
+            st.write(get_ai_analysis(user_input))
+            
