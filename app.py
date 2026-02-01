@@ -16,16 +16,16 @@ except Exception as e:
 
 st.set_page_config(page_title="Forex Deep Mind Pro", page_icon="🏦", layout="wide")
 
-def analyze_full_content(text_data):
-    """Mətnin daxilini dərindən oxuyub peşəkar qərar verir"""
+def deep_ai_analysis(text_content):
+    """Mətni tam oxuyub peşəkar qərar çıxarır"""
     prompt = f"""
-    Sən peşəkar bir fond menecerisən. Aşağıdakı bazar təhlilini oxu:
-    "{text_data}"
+    Sən peşəkar bir fond menecerisən. Aşağıdakı bazar təhlilini dərindən oxu:
+    "{text_content}"
     
     Tapşırıq:
-    1. Qərar: LONG, SHORT və ya NEYTRAL?
+    1. Qərar: 🟢 LONG, 🔴 SHORT və ya 🟡 NEYTRAL?
     2. Səbəb: Azərbaycan dilində 1 cümləlik çox konkret texniki izah.
-    3. Səviyyələr: Mətndəki Entry, Stop Loss və Take Profit qiymətlərini çıxar.
+    3. Səviyyələr: Mətndəki Entry, Stop Loss və Take Profit qiymətlərini tap.
     
     Format: [QƏRAR] | [İZAH] | [SƏVİYYƏLƏR]
     """
@@ -40,7 +40,7 @@ def analyze_full_content(text_data):
         elif "SHORT" in dec_raw: decision = "🔴 SHORT"
         
         summary = parts[1].strip() if len(parts) > 1 else "Analiz dərindən emal edildi."
-        levels = parts[2].strip() if len(parts) > 2 else "Qiymət qeyd edilməyib."
+        levels = parts[2].strip() if len(parts) > 2 else "Mətndə rəqəm tapılmadı."
         
         return decision, summary, levels
     except:
@@ -48,38 +48,37 @@ def analyze_full_content(text_data):
 
 # --- UI ---
 st.title("🏦 Forex Deep Mind: Professional Hub")
-st.markdown("Bu versiya birbaşa xəbər agentliklərinin analiz lentini (RSS) dərindən oxuyur.")
+st.markdown("Bu sistem hər bir analizin xülasəsini dərindən emal edərək mütləq bir nəticə çıxarır.")
 
 if st.button('Həqiqi Analizləri İndi Oxu'):
-    # Ən etibarlı və bloklanmayan birbaşa RSS mənbələri
+    # Mənbələri artırdıq ki, mütləq məlumat gəlsin
     rss_feeds = {
-        "FXStreet (Technical)": "https://www.fxstreet.com/rss/technical-analysis",
-        "DailyForex (Signals)": "https://www.dailyforex.com/forex-technical-analysis/rss",
-        "ActionForex": "https://www.actionforex.com/category/contributors/analysis/feed/"
+        "DailyForex Analysis": "https://www.dailyforex.com/forex-technical-analysis/rss",
+        "FXStreet Technical": "https://www.fxstreet.com/rss/technical-analysis",
+        "Investing Analysis": "https://www.investing.com/rss/forex_TechnicalAnalysis.rss",
+        "Forexlive": "https://www.forexlive.com/rss"
     }
     
     all_reports = []
     
     for name, url in rss_feeds.items():
         with st.status(f"{name} mənbəsindən mətnlər çəkilir...", expanded=False):
+            # Ehtiyat tədbiri: bəzi serverlərin bloklanmaması üçün fərqli user-agent simulyasiyası yoxdur, feedparser birbaşa oxuyur
             feed = feedparser.parse(url)
             
-            for entry in feed.entries[:5]: # Hər mənbədən ən son 5 analiz
-                # RSS daxilində çox vaxt 'content' və ya 'summary' olur
-                raw_html = ""
+            for entry in feed.entries[:6]: 
+                # Mətni toplamaq
+                raw_html = entry.get('summary', '') + entry.get('description', '')
                 if 'content' in entry:
-                    raw_html = entry.content[0].value
-                elif 'summary' in entry:
-                    raw_html = entry.summary
+                    raw_html += entry.content[0].value
                 
-                # HTML-i təmizləyib təmiz mətn alırıq (AI üçün)
                 clean_text = BeautifulSoup(raw_html, "html.parser").get_text()
                 
-                # Əgər mətn qısadırsa, başlığı da əlavə edirik
+                # AI-ya həm başlığı, həm də daxili mətni göndəririk
                 full_context = f"BAŞLIQ: {entry.title}\nMƏTN: {clean_text}"
                 
-                if len(clean_text) > 100:
-                    decision, reason, levels = analyze_full_content(full_context)
+                if len(clean_text) > 50:
+                    decision, reason, levels = deep_ai_analysis(full_context)
                     
                     if decision:
                         all_reports.append({
@@ -92,7 +91,7 @@ if st.button('Həqiqi Analizləri İndi Oxu'):
                         })
 
     if all_reports:
-        # Cədvəl görünüşü
+        # Cədvəl
         df = pd.DataFrame(all_reports)
         st.subheader("📋 Bazar Sinyalları (Dərin Təhlil)")
         st.dataframe(df[['Mənbə', 'Qərar', 'Başlıq']], use_container_width=True)
@@ -100,13 +99,13 @@ if st.button('Həqiqi Analizləri İndi Oxu'):
         # Detallı kartlar
         for item in all_reports:
             with st.expander(f"{item['Qərar']} | {item['Başlıq']}"):
-                st.write(f"**Analiz mənbəsi:** {item['Mənbə']}")
-                st.info(f"**AI Qərarının Səbəbi:** {item['İzah']}")
-                st.warning(f"**Texniki Səviyyələr:** {item['Səviyyələr']}")
+                st.write(f"**Mənbə:** {item['Mənbə']}")
+                st.success(f"**AI Təhlili:** {item['İzah']}")
+                st.warning(f"**Qiymət Səviyyələri:** {item['Səviyyələr']}")
                 st.link_button("Tam məqaləyə keçid", item['Link'])
     else:
-        st.error("Xəbər lentləri müvəqqəti bağlıdır və ya AI emal edə bilmədi.")
+        st.error("Mənbələr müvəqqəti məlumat vermir. Zəhmət olmasa bir neçə dəqiqə sonra yenidən yoxlayın.")
 
-st.sidebar.markdown("### Niyə bu sistem?")
-st.sidebar.write("Bu sistem Google axtarışından asılı deyil. Birbaşa rəsmi analiz kanallarından gələn tam mətni Gemini 1.5-ə oxudur və peşəkar nəticə çıxarır.")
+st.sidebar.markdown("### Sistemin Üstünlüyü")
+st.sidebar.write("Bu versiya Google axtarışını tamamilə ləğv etdi və birbaşa maliyyə agentliklərinin 'raw data' (xammal) xəbər lentlərinə bağlandı.")
     
