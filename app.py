@@ -12,67 +12,69 @@ try:
 except Exception as e:
     st.error(f"AI bağlantı xətası: {e}")
 
-st.set_page_config(page_title="Forex AI Master", page_icon="🏦", layout="wide")
+st.set_page_config(page_title="Forex AI Final", page_icon="🏦")
 
-st.title("🏦 Forex AI Master: Real-Time Intelligence")
-st.markdown("Bu sistem rəsmi **Yahoo Finance** bazasından həm canlı rəqəmləri, həm də tam analiz mətnlərini gətirir.")
+st.title("🏦 Forex AI: Professional Analyzer")
 
-# Valyuta seçimi
-symbol = st.selectbox("Aktiv seçin:", ["EURUSD=X", "GBPUSD=X", "GC=F (Qızıl)", "BTC-USD"])
+symbol_map = {
+    "EUR/USD": "EURUSD=X",
+    "GBP/USD": "GBPUSD=X",
+    "GOLD (Qızıl)": "GC=F",
+    "BITCOIN": "BTC-USD"
+}
+
+selected = st.selectbox("Aktiv seçin:", list(symbol_map.keys()))
+symbol = symbol_map[selected]
 
 if st.button('Dərindən Analiz Et'):
-    with st.spinner('Rəsmi məlumatlar və analizlər toplanır...'):
+    with st.spinner('Məlumatlar toplanır...'):
         try:
-            # 1. Rəqəmsal məlumatları çəkirik
             ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="5d")
-            current_price = hist['Close'].iloc[-1]
             
-            # 2. Xəbər və Analizləri çəkirik (Bloklanma riski 0%)
-            news = ticker.news
-            
-            if not news:
-                st.warning("Bu aktiv üçün hazırda aktiv xəbər lenti tapılmadı.")
+            # 1. Qiymət məlumatı
+            hist = ticker.history(period="1d")
+            if not hist.empty:
+                current_price = hist['Close'].iloc[-1]
+                st.metric(label=f"{selected} Cari Qiymət", value=f"{current_price:.4f}")
             else:
-                st.subheader(f"📊 {symbol} üzrə Yekun Hesabat")
-                
-                # Bütün xəbərləri birləşdirib AI-ya veririk
-                context = ""
-                for n in news[:5]:
-                    context += f"Başlıq: {n['title']}\nXülasə: {n.get('summary', '')}\n\n"
-                
-                # AI Analizi
-                prompt = f"""
-                Sən peşəkar Forex analitikisən. 
-                Aktiv: {symbol}
-                Cari Qiymət: {current_price}
-                Son Analizlər:
-                {context}
-                
-                Tapşırıq:
-                1. Qərar: 🟢 LONG, 🔴 SHORT və ya 🟡 NEYTRAL?
-                2. Səbəb: Azərbaycan dilində ən son xəbərlərə əsaslanan texniki izah.
-                3. Səviyyələr: Cari qiymətə ({current_price}) əsasən ağlabatan Entry, SL və TP təyin et.
-                """
-                
-                response = model.generate_content(prompt)
-                
-                # Vizual nəticə
-                st.markdown("---")
-                col1, col2 = st.columns([1, 2])
-                with col1:
-                    st.metric(label="Cari Qiymət", value=f"{current_price:.4f}")
-                    st.info(f"**AI Qərarı:**\n{response.text.splitlines()[0]}")
-                with col2:
-                    st.write("**🧠 Dərin Analiz və Səviyyələr:**")
-                    st.write(response.text)
-                
-                st.balloons()
-                
-        except Exception as e:
-            st.error(f"Sistem xətası: {e}")
+                current_price = "Məlum deyil"
 
-st.sidebar.markdown("### Niyə bu ən yaxşısıdır?")
-st.sidebar.write("✅ **Bloklanmır:** Yahoo Finance rəsmi API kimidir.")
-st.sidebar.write("✅ **Rəqəmsal + Mətn:** Həm son qiyməti görür, həm də xəbərləri oxuyur.")
-st.sidebar.write("✅ **Stabil:** 404 xətası verməyən ən stabil metoddur.")
+            # 2. Xəbərləri ehtiyatlı şəkildə çəkirik
+            news = ticker.news
+            context = ""
+            
+            if news and len(news) > 0:
+                for n in news[:5]:
+                    # 'title' və ya 'summary' yoxdursa xəta verməməsi üçün .get() istifadə edirik
+                    t = n.get('title', 'Başlıqsız xəbər')
+                    s = n.get('summary', n.get('description', 'Xülasə yoxdur'))
+                    context += f"Xəbər: {t}\nDetallar: {s}\n\n"
+            
+            if not context:
+                context = "Hazırda bu aktiv üçün xüsusi xəbər tapılmadı, lakin ümumi bazar trendini analiz et."
+
+            # 3. AI Analizi
+            prompt = f"""
+            Sən peşəkar Forex analitikisən.
+            Aktiv: {selected} ({symbol})
+            Cari Qiymət: {current_price}
+            
+            Son Bazar Məlumatları:
+            {context}
+            
+            Tapşırıq (Azərbaycan dilində cavab ver):
+            1. Sentiment: 🟢 LONG, 🔴 SHORT və ya 🟡 NEYTRAL?
+            2. Texniki İzah: Bu qərara niyə gəldiyini 1-2 cümlə ilə izah et.
+            3. Səviyyələr: Cari qiymətə əsasən Entry, Stop Loss (SL) və Take Profit (TP) rəqəmlərini təyin et.
+            """
+            
+            response = model.generate_content(prompt)
+            
+            st.markdown("---")
+            st.markdown(response.text)
+            st.balloons()
+
+        except Exception as e:
+            st.error(f"Analiz zamanı gözlənilməz xəta: {str(e)}")
+            st.info("İpucu: Bir neçə saniyə gözləyib yenidən yoxlayın.")
+            
