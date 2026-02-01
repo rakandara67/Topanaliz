@@ -1,106 +1,87 @@
 import streamlit as st
 import pandas as pd
-import feedparser
 import google.generativeai as genai
-from bs4 import BeautifulSoup 
-from urllib.parse import quote
+from duckduckgo_search import DDGS
 import time
 
 # --- KONFİQURASİYA ---
-API_KEY = "AIzaSyCYMzC7vax4vCA0FLDxeqIeHBwxHklUnao" 
+API_KEY = "AIzaSyCYMzC7vax4vCA0FLDxeqIeHBwxHklUnao"
 
 try:
     genai.configure(api_key=API_KEY)
     ai_model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error(f"AI Başlatma xətası: {e}")
+    st.error(f"AI Xətası: {e}")
 
-st.set_page_config(page_title="Forex Deep Pro", page_icon="💹", layout="wide")
+st.set_page_config(page_title="Forex Deep Mind AI", page_icon="🧠", layout="wide")
 
-def deep_ai_logic(title, summary_html):
-    """Mətnin cəmini analiz edir"""
-    # HTML təmizləmə
-    soup = BeautifulSoup(summary_html, "html.parser")
-    clean_text = soup.get_text()
-    
-    # AI üçün geniş kontekst yaradırıq
-    full_context = f"Başlıq: {title}\nDetallar: {clean_text}"
-    
+def get_ai_decision(context):
+    """Mətnin hamısını analiz edib peşəkar qərar çıxarır"""
     prompt = f"""
-    Sən peşəkar Forex analitikisən. Aşağıdakı mətnə əsasən dərin analiz et:
-    "{full_context}"
+    Sən milyard dollarlıq fondların baş Forex analitikisən. Aşağıdakı bazar analiz mətni sənə daxil olub:
     
-    Tapşırıq:
-    1. Qərar: LONG, SHORT və ya NEYTRAL? (Mətndəki 'bullish', 'bearish', 'sell', 'buy' sözlərinə diqqət yetir).
-    2. İzah: Azərbaycan dilində 1 cümləlik texniki səbəb.
-    3. Səviyyələr: Varsa qiymətlər, yoxsa 'Məqalədə qeyd edilməyib'.
+    "{context}"
     
-    Format: [QƏRAR] | [İZAH] | [SƏVİYYƏ]
+    Sənin tapşırığın:
+    1. Bu mətndən bazarın ruhunu (Sentiment) tut.
+    2. Qərar ver: 🟢 LONG, 🔴 SHORT və ya 🟡 NEYTRAL.
+    3. Azərbaycan dilində peşəkar, qısa bir 'Niyə?' izahı yaz.
+    4. Mətndən texniki səviyyələri (Entry, SL, TP) tap.
+    
+    Format:
+    [QƏRAR]
+    İzah: [Cümlə]
+    Səviyyələr: [Qiymətlər]
     """
     try:
         response = ai_model.generate_content(prompt)
-        res = response.text
-        parts = res.split("|")
-        
-        decision = "🟡 NEYTRAL"
-        if "LONG" in parts[0].upper() or "🟢" in parts[0]: decision = "🟢 LONG"
-        elif "SHORT" in parts[0].upper() or "🔴" in parts[0]: decision = "🔴 SHORT"
-        
-        reason = parts[1].strip() if len(parts) > 1 else "Trend analizi."
-        levels = parts[2].strip() if len(parts) > 2 else "Tapılmadı."
-        
-        return decision, reason, levels
+        return response.text
     except:
-        return None, None, None
+        return "⚠️ AI emal edə bilmədi."
 
 # --- UI ---
-st.title("💹 Forex Deep AI: Professional Analiz")
-st.markdown("Bu sistem hər bir analizin xülasəsini dərindən emal edərək mütləq bir nəticə çıxarır.")
+st.title("🧠 Forex Deep Mind: Həqiqi Mətn Analizi")
+st.markdown("Google-u deyil, birbaşa bazar mənbələrini dərindən tarayaraq hər bir analizin daxili mənasını oxuyur.")
 
-if st.button('Dərin Analizləri Gətir'):
-    # Daha geniş axtarış sorğuları (məlumatın gəlməsi üçün)
-    sources = [
-        ("DailyForex", "dailyforex.com", "forex analysis"),
-        ("FXStreet", "fxstreet.com", "technical forecast"),
-        ("Investing", "investing.com", "forex technical analysis")
-    ]
-    
-    all_results = []
-    placeholder = st.empty()
-    
-    with st.spinner("Məlumatlar toplanır və AI tərəfindən oxunur..."):
-        for src_name, site_url, query in sources:
-            rss_url = f"https://news.google.com/rss/search?q={quote('site:'+site_url+' '+query)}&hl=en-US&gl=US&ceid=US:en"
-            feed = feedparser.parse(rss_url)
-            
-            for entry in feed.entries[:8]:
-                decision, reason, levels = deep_ai_logic(entry.title, entry.summary)
-                
-                if decision:
-                    all_results.append({
-                        "Mənbə": src_name,
-                        "Başlıq": entry.title.split(" - ")[0],
-                        "Qərar": decision,
-                        "AI Şərhi": reason,
-                        "Səviyyələr": levels,
-                        "Link": entry.link
-                    })
-    
-    if all_results:
-        df = pd.DataFrame(all_results)
-        st.subheader("📊 Bazarın Ümumi Görünüşü")
-        st.dataframe(df[['Mənbə', 'Başlıq', 'Qərar']], use_container_width=True)
+query = st.text_input("Analiz ediləcək valyuta/aktiv:", value="EURUSD technical analysis today")
+
+if st.button('Dərindən Araşdır və Qərar Ver'):
+    with st.spinner('Bazar analizləri oxunur, AI qərar verir...'):
+        results_list = []
         
-        st.subheader("🔍 Detallı AI Hesabatları")
-        for item in all_results:
-            with st.expander(f"{item['Qərar']} | {item['Başlıq']}"):
-                st.write(f"**Mənbə:** {item['Mənbə']}")
-                st.info(f"**AI Təhlili:** {item['AI Şərhi']}")
-                st.warning(f"**Qiymət Səviyyələri:** {item['Səviyyələr']}")
-                st.link_button("Mənbəni Orijinalda Oxu", item['Link'])
-    else:
-        st.error("Xəta: Heç bir analiz tapılmadı. Zəhmət olmasa axtarış sözlərini və ya interneti yoxlayın.")
+        # DuckDuckGo vasitəsilə son 10 analizi axtarırıq (Bloklanmır)
+        try:
+            with DDGS() as ddgs:
+                # 'region' və 'safesearch' sayəsində daha təmiz nəticələr
+                search_results = ddgs.text(query, region='wt-wt', safesearch='off', timelimit='d', max_results=10)
+                
+                for r in search_results:
+                    # Hər bir nəticənin 'body' hissəsi məqalənin mətni olur
+                    full_text_context = f"Başlıq: {r['title']}\nMəzmun: {r['body']}"
+                    
+                    # AI-ya mətni göndəririk
+                    ai_report = get_ai_decision(full_text_context)
+                    
+                    results_list.append({
+                        "Mənbə": r['href'],
+                        "Başlıq": r['title'],
+                        "AI_Hesabat": ai_report
+                    })
+                    time.sleep(0.5) # API limitinə düşməmək üçün
+        except Exception as e:
+            st.error(f"Axtarışda problem oldu: {e}")
 
-st.sidebar.markdown("---")
-st.sidebar.caption("Yalnız təlimat məqsədi daşıyır. Ticarət risklidir.")
+    if results_list:
+        st.subheader("📊 AI Tərəfindən Təsdiqlənmiş Siqnallar")
+        for res in results_list:
+            # Qərarın rənginə görə ikon seçimi (Sadə vizuallaşdırma)
+            header_color = "🟢" if "LONG" in res['AI_Hesabat'].upper() else "🔴" if "SHORT" in res['AI_Hesabat'].upper() else "🟡"
+            
+            with st.expander(f"{header_color} {res['Başlıq']}"):
+                st.write(res['AI_Hesabat'])
+                st.caption(f"Mənbə linki: {res['Mənbə']}")
+    else:
+        st.warning("Bu gün üçün hələlik heç bir dərin analiz mətni tapılmadı.")
+
+st.sidebar.info("Bu sistem 'DuckDuckGo Intelligence' və 'Gemini 1.5 Pro' infrastrukturundan istifadə edərək saytların içini oxuyur.")
     
